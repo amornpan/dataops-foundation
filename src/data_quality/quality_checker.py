@@ -2,421 +2,548 @@
 # -*- coding: utf-8 -*-
 """
 DataOps Foundation - Data Quality Checker
-เครื่องมือตรวจสอบคุณภาพข้อมูลขั้นสูง
+ตัวตรวจสอบคุณภาพข้อมูลขั้นสูง
 
 Features:
-- Data profiling และ statistics
-- Business rules validation
-- Anomaly detection
-- Quality scoring
-- Automated reporting
+- Comprehensive data quality assessments
+- Multiple quality metrics (completeness, uniqueness, consistency)
+- Configurable quality thresholds
+- Detailed quality reports
+- Integration with ETL pipeline
 """
 
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass
 from datetime import datetime
-import warnings
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass
+import re
+import os
 
-warnings.filterwarnings('ignore')
+
+@dataclass
+class QualityMetric:
+    """เก็บข้อมูล quality metric แต่ละตัว"""
+    name: str
+    value: float
+    threshold: float
+    passed: bool
+    description: str
+    details: Dict[str, Any] = None
 
 
 @dataclass
 class QualityResult:
     """ผลลัพธ์การตรวจสอบคุณภาพข้อมูล"""
     overall_score: float
-    passed_checks: int
-    failed_checks: int
-    total_checks: int
-    check_results: Dict[str, Any]
+    grade: str
+    passed: bool
+    metrics: List[QualityMetric]
+    metadata: Dict[str, Any]
     recommendations: List[str]
-    execution_time: float
 
 
 class DataQualityChecker:
     """
-    Data Quality Checker ขั้นสูงสำหรับ DataOps Foundation
+    ตัวตรวจสอบคุณภาพข้อมูลที่ครอบคลุม
+    รองรับหลากหลายมาตรการวัดคุณภาพข้อมูล
     """
     
-    def __init__(self, config: Optional[Dict] = None):
-        """เริ่มต้น Data Quality Checker"""
-        self.config = config or {}
+    def __init__(self, config: Dict[str, Any] = None):
+        """เริ่มต้น Quality Checker"""
         self.logger = logging.getLogger(__name__)
+        self.config = config or {}
         
-        # Quality thresholds
-        self.thresholds = {
-            'completeness': 0.95,  # 95% completeness
-            'uniqueness': 0.98,    # 98% uniqueness for keys
-            'validity': 0.90,      # 90% valid values
-            'consistency': 0.95,   # 95% consistency
-            'accuracy': 0.90       # 90% accuracy
+        # Default thresholds
+        self.default_thresholds = {
+            'completeness': 0.85,      # 85% complete
+            'uniqueness': 0.90,        # 90% unique
+            'consistency': 0.90,       # 90% consistent
+            'validity': 0.85,          # 85% valid
+            'accuracy': 0.80,          # 80% accurate
+            'timeliness': 0.85         # 85% timely
         }
         
-        # Update thresholds from config
-        if 'data_quality' in self.config:
-            self.thresholds.update(self.config['data_quality'].get('thresholds', {}))
+        # Override with config values
+        self.thresholds = self.config.get('quality_thresholds', {})
+        for key, value in self.default_thresholds.items():
+            if key not in self.thresholds:
+                self.thresholds[key] = value
+        
+        self.logger.info("Data Quality Checker initialized")
     
-    def run_checks(self, dataframe: pd.DataFrame) -> QualityResult:
-        """รันการตรวจสอบคุณภาพข้อมูลครบถ้วน"""
-        start_time = datetime.now()
-        
-        check_results = {}
-        passed_checks = 0
-        failed_checks = 0
-        recommendations = []
-        
-        # 1. Completeness Check
-        completeness_result = self._check_completeness(dataframe)
-        check_results['completeness'] = completeness_result
-        if completeness_result['passed']:
-            passed_checks += 1
-        else:
-            failed_checks += 1
-            recommendations.append("Consider handling missing values in columns with low completeness")
-        
-        # 2. Uniqueness Check
-        uniqueness_result = self._check_uniqueness(dataframe)
-        check_results['uniqueness'] = uniqueness_result
-        if uniqueness_result['passed']:
-            passed_checks += 1
-        else:
-            failed_checks += 1
-            recommendations.append("Check for duplicate records in key columns")
-        
-        # 3. Data Type Validity
-        validity_result = self._check_validity(dataframe)
-        check_results['validity'] = validity_result
-        if validity_result['passed']:
-            passed_checks += 1
-        else:
-            failed_checks += 1
-            recommendations.append("Review data types and format consistency")
-        
-        # 4. Business Rules
-        business_rules_result = self._check_business_rules(dataframe)
-        check_results['business_rules'] = business_rules_result
-        if business_rules_result['passed']:
-            passed_checks += 1
-        else:
-            failed_checks += 1
-            recommendations.append("Validate business logic and constraints")
-        
-        # 5. Statistical Anomalies
-        anomaly_result = self._check_anomalies(dataframe)
-        check_results['anomalies'] = anomaly_result
-        if anomaly_result['passed']:
-            passed_checks += 1
-        else:
-            failed_checks += 1
-            recommendations.append("Investigate statistical anomalies in the data")
-        
-        # Calculate overall score
-        total_checks = passed_checks + failed_checks
-        overall_score = (passed_checks / total_checks * 100) if total_checks > 0 else 0
-        
-        execution_time = (datetime.now() - start_time).total_seconds()
-        
-        return QualityResult(
-            overall_score=overall_score,
-            passed_checks=passed_checks,
-            failed_checks=failed_checks,
-            total_checks=total_checks,
-            check_results=check_results,
-            recommendations=recommendations,
-            execution_time=execution_time
-        )
-    
-    def _check_completeness(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """ตรวจสอบความครบถ้วนของข้อมูล"""
+    def calculate_completeness(self, df: pd.DataFrame) -> QualityMetric:
+        """
+        คำนวณความสมบูรณ์ของข้อมูล (Completeness)
+        ตรวจสอบว่ามีข้อมูลครบถ้วนเพียงใด
+        """
         try:
-            null_percentages = df.isnull().mean()
-            completeness_scores = 1 - null_percentages
+            total_values = df.size
+            non_null_values = df.count().sum()
+            completeness_score = non_null_values / total_values if total_values > 0 else 0
             
-            # Overall completeness score
-            overall_completeness = completeness_scores.mean()
+            # รายละเอียดเพิ่มเติม
+            column_completeness = {}
+            for col in df.columns:
+                col_completeness = df[col].count() / len(df) if len(df) > 0 else 0
+                column_completeness[col] = {
+                    'completeness': col_completeness,
+                    'null_count': df[col].isnull().sum(),
+                    'total_count': len(df)
+                }
             
-            # Check if meets threshold
-            passed = overall_completeness >= self.thresholds['completeness']
+            return QualityMetric(
+                name='completeness',
+                value=completeness_score,
+                threshold=self.thresholds['completeness'],
+                passed=completeness_score >= self.thresholds['completeness'],
+                description=f'Data completeness: {completeness_score:.2%}',
+                details={
+                    'total_values': total_values,
+                    'non_null_values': non_null_values,
+                    'column_completeness': column_completeness
+                }
+            )
             
-            # Identify problematic columns
-            problematic_columns = null_percentages[null_percentages > (1 - self.thresholds['completeness'])].to_dict()
-            
-            return {
-                'passed': passed,
-                'score': overall_completeness,
-                'threshold': self.thresholds['completeness'],
-                'column_scores': completeness_scores.to_dict(),
-                'problematic_columns': problematic_columns,
-                'details': f"Overall completeness: {overall_completeness:.2%}"
-            }
         except Exception as e:
-            self.logger.error(f"Error in completeness check: {e}")
-            return {
-                'passed': False,
-                'score': 0.0,
-                'error': str(e)
-            }
+            self.logger.error(f"Error calculating completeness: {e}")
+            return QualityMetric(
+                name='completeness',
+                value=0.0,
+                threshold=self.thresholds['completeness'],
+                passed=False,
+                description='Error calculating completeness',
+                details={'error': str(e)}
+            )
     
-    def _check_uniqueness(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """ตรวจสอบความไม่ซ้ำของข้อมูล"""
+    def calculate_uniqueness(self, df: pd.DataFrame) -> QualityMetric:
+        """
+        คำนวณความเป็นเอกลักษณ์ของข้อมูล (Uniqueness)
+        ตรวจสอบว่ามีข้อมูลที่ซ้ำกันเพียงใด
+        """
         try:
-            # Check for duplicate rows
             total_rows = len(df)
-            duplicate_rows = df.duplicated().sum()
-            uniqueness_score = 1 - (duplicate_rows / total_rows) if total_rows > 0 else 1
+            if total_rows == 0:
+                return QualityMetric(
+                    name='uniqueness',
+                    value=0.0,
+                    threshold=self.thresholds['uniqueness'],
+                    passed=False,
+                    description='No data to assess uniqueness',
+                    details={}
+                )
             
-            passed = uniqueness_score >= self.thresholds['uniqueness']
+            unique_rows = len(df.drop_duplicates())
+            uniqueness_score = unique_rows / total_rows
             
-            # Check individual columns for uniqueness
+            # รายละเอียดเพิ่มเติม
             column_uniqueness = {}
             for col in df.columns:
                 if df[col].dtype in ['object', 'string']:
-                    unique_ratio = df[col].nunique() / len(df.dropna(subset=[col]))
-                    column_uniqueness[col] = unique_ratio
+                    unique_values = df[col].nunique()
+                    total_values = df[col].count()
+                    col_uniqueness = unique_values / total_values if total_values > 0 else 0
+                    column_uniqueness[col] = {
+                        'uniqueness': col_uniqueness,
+                        'unique_values': unique_values,
+                        'total_values': total_values
+                    }
             
-            return {
-                'passed': passed,
-                'score': uniqueness_score,
-                'threshold': self.thresholds['uniqueness'],
-                'duplicate_rows': duplicate_rows,
-                'total_rows': total_rows,
-                'column_uniqueness': column_uniqueness,
-                'details': f"Uniqueness score: {uniqueness_score:.2%}, Duplicates: {duplicate_rows}"
-            }
+            return QualityMetric(
+                name='uniqueness',
+                value=uniqueness_score,
+                threshold=self.thresholds['uniqueness'],
+                passed=uniqueness_score >= self.thresholds['uniqueness'],
+                description=f'Data uniqueness: {uniqueness_score:.2%}',
+                details={
+                    'total_rows': total_rows,
+                    'unique_rows': unique_rows,
+                    'duplicate_rows': total_rows - unique_rows,
+                    'column_uniqueness': column_uniqueness
+                }
+            )
+            
         except Exception as e:
-            self.logger.error(f"Error in uniqueness check: {e}")
-            return {
-                'passed': False,
-                'score': 0.0,
-                'error': str(e)
-            }
+            self.logger.error(f"Error calculating uniqueness: {e}")
+            return QualityMetric(
+                name='uniqueness',
+                value=0.0,
+                threshold=self.thresholds['uniqueness'],
+                passed=False,
+                description='Error calculating uniqueness',
+                details={'error': str(e)}
+            )
     
-    def _check_validity(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """ตรวจสอบความถูกต้องของประเภทข้อมูล"""
+    def calculate_consistency(self, df: pd.DataFrame) -> QualityMetric:
+        """
+        คำนวณความสม่ำเสมอของข้อมูล (Consistency)
+        ตรวจสอบรูปแบบข้อมูลและความสม่ำเสมอ
+        """
         try:
-            validity_issues = []
-            column_validity = {}
+            consistency_checks = []
             
             for col in df.columns:
-                # Check for mixed types
                 if df[col].dtype == 'object':
-                    # Check if numeric column stored as string
-                    try:
-                        pd.to_numeric(df[col], errors='raise')
-                        validity_issues.append(f"Column '{col}' appears to be numeric but stored as text")
-                        column_validity[col] = 0.5
-                    except:
-                        column_validity[col] = 1.0
-                else:
-                    column_validity[col] = 1.0
-            
-            # Overall validity score
-            overall_validity = np.mean(list(column_validity.values()))
-            passed = overall_validity >= self.thresholds['validity'] and len(validity_issues) == 0
-            
-            return {
-                'passed': passed,
-                'score': overall_validity,
-                'threshold': self.thresholds['validity'],
-                'column_validity': column_validity,
-                'issues': validity_issues,
-                'details': f"Validity score: {overall_validity:.2%}, Issues: {len(validity_issues)}"
-            }
-        except Exception as e:
-            self.logger.error(f"Error in validity check: {e}")
-            return {
-                'passed': False,
-                'score': 0.0,
-                'error': str(e)
-            }
-    
-    def _check_business_rules(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """ตรวจสอบกฎทางธุรกิจ"""
-        try:
-            business_rule_results = []
-            passed_rules = 0
-            total_rules = 0
-            
-            # Rule 1: Loan amounts should be positive
-            if 'loan_amnt' in df.columns:
-                total_rules += 1
-                positive_loans = (df['loan_amnt'] > 0).sum()
-                total_loans = len(df)
-                rule_score = positive_loans / total_loans if total_loans > 0 else 0
-                
-                rule_result = {
-                    'rule_name': 'positive_loan_amount',
-                    'description': 'Loan amounts must be positive',
-                    'score': rule_score,
-                    'passed': rule_score >= 0.99,
-                    'violations': total_loans - positive_loans
-                }
-                business_rule_results.append(rule_result)
-                if rule_result['passed']:
-                    passed_rules += 1
-            
-            # Rule 2: Funded amount <= Loan amount
-            if 'loan_amnt' in df.columns and 'funded_amnt' in df.columns:
-                total_rules += 1
-                valid_funding = (df['funded_amnt'] <= df['loan_amnt']).sum()
-                total_records = len(df)
-                rule_score = valid_funding / total_records if total_records > 0 else 0
-                
-                rule_result = {
-                    'rule_name': 'funded_not_exceed_loan',
-                    'description': 'Funded amount should not exceed loan amount',
-                    'score': rule_score,
-                    'passed': rule_score >= 0.95,
-                    'violations': total_records - valid_funding
-                }
-                business_rule_results.append(rule_result)
-                if rule_result['passed']:
-                    passed_rules += 1
-            
-            # Rule 3: Interest rate in reasonable range
-            if 'int_rate' in df.columns:
-                total_rules += 1
-                valid_rates = ((df['int_rate'] >= 0) & (df['int_rate'] <= 1)).sum()
-                total_records = len(df)
-                rule_score = valid_rates / total_records if total_records > 0 else 0
-                
-                rule_result = {
-                    'rule_name': 'interest_rate_range',
-                    'description': 'Interest rate should be between 0 and 1',
-                    'score': rule_score,
-                    'passed': rule_score >= 0.99,
-                    'violations': total_records - valid_rates
-                }
-                business_rule_results.append(rule_result)
-                if rule_result['passed']:
-                    passed_rules += 1
-            
-            # Overall business rules score
-            overall_score = passed_rules / total_rules if total_rules > 0 else 1.0
-            passed = overall_score >= 0.8  # 80% of business rules should pass
-            
-            return {
-                'passed': passed,
-                'score': overall_score,
-                'passed_rules': passed_rules,
-                'total_rules': total_rules,
-                'rule_results': business_rule_results,
-                'details': f"Business rules: {passed_rules}/{total_rules} passed"
-            }
-        except Exception as e:
-            self.logger.error(f"Error in business rules check: {e}")
-            return {
-                'passed': False,
-                'score': 0.0,
-                'error': str(e)
-            }
-    
-    def _check_anomalies(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """ตรวจสอบความผิดปกติทางสถิติ"""
-        try:
-            anomaly_results = []
-            numeric_columns = df.select_dtypes(include=[np.number]).columns
-            
-            for col in numeric_columns:
-                if col in df.columns:
-                    # Calculate Z-scores
-                    mean_val = df[col].mean()
-                    std_val = df[col].std()
-                    
-                    if std_val > 0:
-                        z_scores = np.abs((df[col] - mean_val) / std_val)
-                        anomalies = (z_scores > 3).sum()  # Values more than 3 standard deviations
-                        anomaly_rate = anomalies / len(df)
+                    # ตรวจสอบรูปแบบข้อมูล
+                    non_null_values = df[col].dropna()
+                    if len(non_null_values) > 0:
+                        # ตรวจสอบว่าเป็นอีเมลหรือไม่
+                        if 'email' in col.lower():
+                            valid_emails = non_null_values.str.match(r'^[^@]+@[^@]+\.[^@]+$')
+                            consistency_checks.append({
+                                'column': col,
+                                'check': 'email_format',
+                                'valid_count': valid_emails.sum(),
+                                'total_count': len(non_null_values),
+                                'consistency': valid_emails.sum() / len(non_null_values)
+                            })
                         
-                        anomaly_results.append({
-                            'column': col,
-                            'anomalies': anomalies,
-                            'anomaly_rate': anomaly_rate,
-                            'mean': mean_val,
-                            'std': std_val
-                        })
+                        # ตรวจสอบว่าเป็นเบอร์โทรหรือไม่
+                        elif 'phone' in col.lower():
+                            valid_phones = non_null_values.str.match(r'^[\d\-\+\(\)\s]{10,}$')
+                            consistency_checks.append({
+                                'column': col,
+                                'check': 'phone_format',
+                                'valid_count': valid_phones.sum(),
+                                'total_count': len(non_null_values),
+                                'consistency': valid_phones.sum() / len(non_null_values)
+                            })
+                        
+                        # ตรวจสอบความสม่ำเสมอของตัวอักษร
+                        else:
+                            # ตรวจสอบความสม่ำเสมอของ case
+                            lower_count = non_null_values.str.islower().sum()
+                            upper_count = non_null_values.str.isupper().sum()
+                            title_count = non_null_values.str.istitle().sum()
+                            
+                            max_case_count = max(lower_count, upper_count, title_count)
+                            case_consistency = max_case_count / len(non_null_values)
+                            
+                            consistency_checks.append({
+                                'column': col,
+                                'check': 'case_consistency',
+                                'valid_count': max_case_count,
+                                'total_count': len(non_null_values),
+                                'consistency': case_consistency
+                            })
+                
+                elif df[col].dtype in ['int64', 'float64']:
+                    # ตรวจสอบค่าที่เป็นไปได้
+                    non_null_values = df[col].dropna()
+                    if len(non_null_values) > 0:
+                        # ตรวจสอบค่าลบที่ไม่เหมาะสม
+                        if any(word in col.lower() for word in ['amount', 'price', 'salary', 'income']):
+                            positive_count = (non_null_values >= 0).sum()
+                            consistency_checks.append({
+                                'column': col,
+                                'check': 'positive_values',
+                                'valid_count': positive_count,
+                                'total_count': len(non_null_values),
+                                'consistency': positive_count / len(non_null_values)
+                            })
             
-            # Overall anomaly score (lower anomaly rate is better)
-            if anomaly_results:
-                avg_anomaly_rate = np.mean([r['anomaly_rate'] for r in anomaly_results])
-                anomaly_score = 1 - avg_anomaly_rate  # Convert to quality score
+            # คำนวณ consistency score โดยรวม
+            if consistency_checks:
+                avg_consistency = sum(check['consistency'] for check in consistency_checks) / len(consistency_checks)
             else:
-                anomaly_score = 1.0
+                avg_consistency = 1.0  # ถ้าไม่มีการตรวจสอบ ถือว่าผ่าน
             
-            passed = anomaly_score >= 0.95  # Less than 5% anomalies
+            return QualityMetric(
+                name='consistency',
+                value=avg_consistency,
+                threshold=self.thresholds['consistency'],
+                passed=avg_consistency >= self.thresholds['consistency'],
+                description=f'Data consistency: {avg_consistency:.2%}',
+                details={
+                    'consistency_checks': consistency_checks,
+                    'checks_performed': len(consistency_checks)
+                }
+            )
             
-            return {
-                'passed': passed,
-                'score': anomaly_score,
-                'anomaly_results': anomaly_results,
-                'details': f"Anomaly score: {anomaly_score:.2%}"
-            }
         except Exception as e:
-            self.logger.error(f"Error in anomaly check: {e}")
-            return {
-                'passed': False,
-                'score': 0.0,
-                'error': str(e)
-            }
+            self.logger.error(f"Error calculating consistency: {e}")
+            return QualityMetric(
+                name='consistency',
+                value=0.0,
+                threshold=self.thresholds['consistency'],
+                passed=False,
+                description='Error calculating consistency',
+                details={'error': str(e)}
+            )
     
-    def generate_report(self, quality_result: QualityResult) -> str:
-        """สร้างรายงานคุณภาพข้อมูล"""
+    def calculate_validity(self, df: pd.DataFrame) -> QualityMetric:
+        """
+        คำนวณความถูกต้องของข้อมูล (Validity)
+        ตรวจสอบว่าข้อมูลอยู่ในรูปแบบที่ถูกต้อง
+        """
+        try:
+            validity_checks = []
+            
+            for col in df.columns:
+                non_null_values = df[col].dropna()
+                if len(non_null_values) == 0:
+                    continue
+                
+                # ตรวจสอบตามประเภทข้อมูล
+                if df[col].dtype == 'object':
+                    # ตรวจสอบว่าข้อมูลไม่ว่างเปล่า
+                    non_empty_count = (non_null_values.str.strip() != '').sum()
+                    validity_checks.append({
+                        'column': col,
+                        'check': 'non_empty_strings',
+                        'valid_count': non_empty_count,
+                        'total_count': len(non_null_values),
+                        'validity': non_empty_count / len(non_null_values)
+                    })
+                
+                elif df[col].dtype in ['int64', 'float64']:
+                    # ตรวจสอบค่าที่เป็น infinite หรือ NaN
+                    finite_count = np.isfinite(non_null_values).sum()
+                    validity_checks.append({
+                        'column': col,
+                        'check': 'finite_numbers',
+                        'valid_count': finite_count,
+                        'total_count': len(non_null_values),
+                        'validity': finite_count / len(non_null_values)
+                    })
+                
+                elif df[col].dtype == 'datetime64[ns]':
+                    # ตรวจสอบว่าวันที่อยู่ในช่วงที่เหมาะสม
+                    current_year = datetime.now().year
+                    valid_dates = ((non_null_values.dt.year >= 1900) & 
+                                  (non_null_values.dt.year <= current_year + 10)).sum()
+                    validity_checks.append({
+                        'column': col,
+                        'check': 'valid_dates',
+                        'valid_count': valid_dates,
+                        'total_count': len(non_null_values),
+                        'validity': valid_dates / len(non_null_values)
+                    })
+            
+            # คำนวณ validity score โดยรวม
+            if validity_checks:
+                avg_validity = sum(check['validity'] for check in validity_checks) / len(validity_checks)
+            else:
+                avg_validity = 1.0
+            
+            return QualityMetric(
+                name='validity',
+                value=avg_validity,
+                threshold=self.thresholds['validity'],
+                passed=avg_validity >= self.thresholds['validity'],
+                description=f'Data validity: {avg_validity:.2%}',
+                details={
+                    'validity_checks': validity_checks,
+                    'checks_performed': len(validity_checks)
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating validity: {e}")
+            return QualityMetric(
+                name='validity',
+                value=0.0,
+                threshold=self.thresholds['validity'],
+                passed=False,
+                description='Error calculating validity',
+                details={'error': str(e)}
+            )
+    
+    def run_checks(self, df: pd.DataFrame) -> QualityResult:
+        """
+        รันการตรวจสอบคุณภาพข้อมูลทั้งหมด
+        """
+        self.logger.info("Starting data quality checks")
+        
+        try:
+            # รันการตรวจสอบแต่ละประเภท
+            metrics = [
+                self.calculate_completeness(df),
+                self.calculate_uniqueness(df),
+                self.calculate_consistency(df),
+                self.calculate_validity(df)
+            ]
+            
+            # คำนวณ overall score
+            weights = {
+                'completeness': 0.30,
+                'uniqueness': 0.25,
+                'consistency': 0.25,
+                'validity': 0.20
+            }
+            
+            overall_score = sum(
+                metric.value * weights.get(metric.name, 0.25) 
+                for metric in metrics
+            )
+            
+            # กำหนดเกรด
+            if overall_score >= 0.90:
+                grade = 'A'
+            elif overall_score >= 0.80:
+                grade = 'B'
+            elif overall_score >= 0.70:
+                grade = 'C'
+            elif overall_score >= 0.60:
+                grade = 'D'
+            else:
+                grade = 'F'
+            
+            # ตรวจสอบว่าผ่านทุกเกณฑ์หรือไม่
+            passed = all(metric.passed for metric in metrics)
+            
+            # สร้างข้อเสนอแนะ
+            recommendations = self._generate_recommendations(metrics, df)
+            
+            result = QualityResult(
+                overall_score=overall_score * 100,  # แปลงเป็นเปอร์เซ็นต์
+                grade=grade,
+                passed=passed,
+                metrics=metrics,
+                metadata={
+                    'dataset_shape': df.shape,
+                    'column_count': len(df.columns),
+                    'row_count': len(df),
+                    'data_types': df.dtypes.to_dict(),
+                    'check_timestamp': datetime.now().isoformat()
+                },
+                recommendations=recommendations
+            )
+            
+            self.logger.info(f"Quality checks completed. Overall score: {overall_score:.1%}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error in quality checks: {e}")
+            return QualityResult(
+                overall_score=0.0,
+                grade='F',
+                passed=False,
+                metrics=[],
+                metadata={'error': str(e)},
+                recommendations=['Fix errors in quality checking process']
+            )
+    
+    def _generate_recommendations(self, metrics: List[QualityMetric], df: pd.DataFrame) -> List[str]:
+        """สร้างข้อเสนอแนะสำหรับปรับปรุงคุณภาพข้อมูล"""
+        recommendations = []
+        
+        for metric in metrics:
+            if not metric.passed:
+                if metric.name == 'completeness':
+                    recommendations.append(
+                        f"❌ Completeness below threshold ({metric.value:.1%} < {metric.threshold:.1%}): "
+                        f"Consider data imputation or removing incomplete records"
+                    )
+                    
+                elif metric.name == 'uniqueness':
+                    recommendations.append(
+                        f"❌ Uniqueness below threshold ({metric.value:.1%} < {metric.threshold:.1%}): "
+                        f"Remove duplicate records or investigate data collection process"
+                    )
+                    
+                elif metric.name == 'consistency':
+                    recommendations.append(
+                        f"❌ Consistency below threshold ({metric.value:.1%} < {metric.threshold:.1%}): "
+                        f"Standardize data formats and validate input rules"
+                    )
+                    
+                elif metric.name == 'validity':
+                    recommendations.append(
+                        f"❌ Validity below threshold ({metric.value:.1%} < {metric.threshold:.1%}): "
+                        f"Validate data formats and remove invalid entries"
+                    )
+        
+        # เพิ่มข้อเสนอแนะทั่วไป
+        if len(df) < 100:
+            recommendations.append("⚠️ Small dataset detected. Consider collecting more data for reliable analysis")
+        
+        if df.isnull().sum().sum() / df.size > 0.20:
+            recommendations.append("⚠️ High percentage of missing values. Consider data collection improvements")
+        
+        return recommendations if recommendations else ["✅ Data quality is acceptable"]
+    
+    def generate_report(self, result: QualityResult) -> str:
+        """สร้างรายงานคุณภาพข้อมูลแบบละเอียด"""
         report = []
-        report.append("=" * 80)
-        report.append("📊 DATA QUALITY REPORT")
-        report.append("=" * 80)
-        report.append(f"🎯 Overall Score: {quality_result.overall_score:.1f}%")
-        report.append(f"✅ Passed Checks: {quality_result.passed_checks}")
-        report.append(f"❌ Failed Checks: {quality_result.failed_checks}")
-        report.append(f"⏱️  Execution Time: {quality_result.execution_time:.2f} seconds")
+        
+        # Header
+        report.append("=" * 70)
+        report.append("📊 DATA QUALITY ASSESSMENT REPORT")
+        report.append("=" * 70)
+        report.append(f"⏰ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append(f"📋 Dataset: {result.metadata.get('row_count', 0):,} rows × {result.metadata.get('column_count', 0)} columns")
         report.append("")
         
-        # Detailed results
-        report.append("📋 DETAILED RESULTS:")
-        report.append("-" * 40)
+        # Overall score
+        report.append("🎯 OVERALL QUALITY SCORE")
+        report.append("-" * 30)
+        report.append(f"Score: {result.overall_score:.1f}%")
+        report.append(f"Grade: {result.grade}")
+        report.append(f"Status: {'✅ PASSED' if result.passed else '❌ FAILED'}")
+        report.append("")
         
-        for check_name, result in quality_result.check_results.items():
-            status = "✅ PASS" if result['passed'] else "❌ FAIL"
-            score = result.get('score', 0) * 100
-            report.append(f"{status} {check_name.upper()}: {score:.1f}%")
-            if 'details' in result:
-                report.append(f"    {result['details']}")
+        # Detailed metrics
+        report.append("📈 DETAILED METRICS")
+        report.append("-" * 30)
+        
+        for metric in result.metrics:
+            status = "✅ PASSED" if metric.passed else "❌ FAILED"
+            report.append(f"{metric.name.upper()}: {metric.value:.1%} (threshold: {metric.threshold:.1%}) {status}")
+            
+            if metric.details:
+                # แสดงรายละเอียดสำคัญ
+                if metric.name == 'completeness' and 'column_completeness' in metric.details:
+                    worst_columns = sorted(
+                        metric.details['column_completeness'].items(),
+                        key=lambda x: x[1]['completeness']
+                    )[:3]
+                    
+                    if worst_columns:
+                        report.append(f"   📉 Columns with most missing data:")
+                        for col, data in worst_columns:
+                            report.append(f"      - {col}: {data['completeness']:.1%} complete")
+                
+                elif metric.name == 'uniqueness' and 'duplicate_rows' in metric.details:
+                    if metric.details['duplicate_rows'] > 0:
+                        report.append(f"   📉 Duplicate rows: {metric.details['duplicate_rows']:,}")
+        
+        report.append("")
         
         # Recommendations
-        if quality_result.recommendations:
-            report.append("")
-            report.append("💡 RECOMMENDATIONS:")
-            report.append("-" * 40)
-            for i, rec in enumerate(quality_result.recommendations, 1):
-                report.append(f"{i}. {rec}")
+        report.append("💡 RECOMMENDATIONS")
+        report.append("-" * 30)
+        for i, rec in enumerate(result.recommendations, 1):
+            report.append(f"{i}. {rec}")
         
         report.append("")
-        report.append("=" * 80)
+        report.append("=" * 70)
         
         return "\n".join(report)
 
 
 def main():
-    """ตัวอย่างการใช้งาน Data Quality Checker"""
-    print("=== DataOps Foundation Data Quality Checker ===")
+    """ตัวอย่างการใช้งาน Quality Checker"""
+    print("=== DataOps Foundation Quality Checker ===")
     
     # สร้างข้อมูลตัวอย่าง
-    np.random.seed(42)
     sample_data = pd.DataFrame({
-        'loan_amnt': np.random.uniform(1000, 50000, 1000),
-        'funded_amnt': np.random.uniform(800, 45000, 1000),
-        'int_rate': np.random.uniform(0.05, 0.25, 1000),
-        'home_ownership': np.random.choice(['RENT', 'OWN', 'MORTGAGE'], 1000),
-        'loan_status': np.random.choice(['Fully Paid', 'Current', 'Charged Off'], 1000)
+        'id': [1, 2, 3, 4, 5, 5],  # มีข้อมูลซ้ำ
+        'name': ['John', 'Jane', '', 'Bob', 'Alice', 'Alice'],  # มีข้อมูลว่าง
+        'email': ['john@test.com', 'jane@test.com', 'invalid-email', 'bob@test.com', None, 'alice@test.com'],
+        'age': [25, 30, -5, 35, 28, 28],  # มีอายุติดลบ
+        'salary': [50000, 60000, 70000, None, 55000, 55000]  # มีค่าว่าง
     })
     
-    # เพิ่มค่า null บางตัว
-    sample_data.loc[np.random.choice(1000, 50, replace=False), 'home_ownership'] = None
+    print(f"Sample data shape: {sample_data.shape}")
+    print(f"Sample data:\n{sample_data}")
+    print()
     
-    # รัน quality checks
+    # สร้าง quality checker
     checker = DataQualityChecker()
+    
+    # รันการตรวจสอบ
     result = checker.run_checks(sample_data)
     
     # แสดงรายงาน

@@ -63,6 +63,63 @@ pytest tests/ -v
 docker-compose -f docker/docker-compose.yml up -d
 ```
 
+### 5. ตั้งค่า Jenkins CI/CD
+
+#### วิธีที่ 1: ใช้ Setup Script (แนะนำ)
+
+```bash
+# Linux/macOS
+chmod +x jenkins/scripts/setup_jenkins.sh
+./jenkins/scripts/setup_jenkins.sh
+
+# Windows
+jenkins\scripts\setup_jenkins.bat
+```
+
+#### วิธีที่ 2: Manual Setup
+
+```bash
+# Build Jenkins image พร้อม Python
+docker build -f docker/Dockerfile.jenkins -t dataops-jenkins .
+
+# รัน Jenkins container
+docker run -d \
+  --name dataops-jenkins \
+  -p 8081:8080 \
+  -p 50000:50000 \
+  -v jenkins-data:/var/jenkins_home \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd):/workspace \
+  --restart unless-stopped \
+  dataops-jenkins
+
+# ดูรหัสผ่านเริ่มต้น
+docker exec dataops-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+#### การเข้าถึง Jenkins
+
+- **Jenkins URL**: http://localhost:8081
+- **Username**: admin
+- **Password**: (ดูจากคำสั่งข้างต้น หรือ DataOps123!)
+
+#### การตั้งค่าเพิ่มเติม
+
+1. **เพิ่ม GitHub Credentials**:
+   - Dashboard → Manage Jenkins → Manage Credentials
+   - เพิ่ม GitHub Personal Access Token
+
+2. **สร้าง Pipeline Job**:
+   - New Item → Pipeline
+   - Repository: https://github.com/amornpan/dataops-foundation.git
+   - Script Path: jenkins/Jenkinsfile
+
+3. **ตั้งค่า GitHub Webhook**:
+   - GitHub Repository → Settings → Webhooks
+   - URL: http://your-server:8081/github-webhook/
+
+**📚 คู่มือการตั้งค่า Jenkins ที่ละเอียด: [docs/jenkins-setup.md](docs/jenkins-setup.md)**
+
 ## 📁 โครงสร้างโปรเจค
 
 ```

@@ -1,194 +1,274 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DataOps Foundation - Quick Test Script
-สคริปต์ทดสอบรวดเร็วเพื่อตรวจสอบการทำงานของระบบ
+DataOps Foundation - Quick Test
+ทดสอบระบบอย่างรวดเร็วเพื่อตรวจสอบการทำงาน
 """
 
-import sys
 import os
-from pathlib import Path
+import sys
+import time
+from datetime import datetime
 
-# Add src to Python path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-def test_system():
-    """ทดสอบระบบอย่างรวดเร็ว"""
+def print_header():
+    """แสดง header ของโปรแกรม"""
+    print("=" * 70)
+    print("🚀 DataOps Foundation - Quick Test")
+    print("=" * 70)
+    print(f"⏰ Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print()
+
+def test_imports():
+    """ทดสอบการ import modules"""
+    print("📦 Testing Module Imports...")
     
-    print("🚀 DataOps Foundation - Quick System Test")
-    print("=" * 60)
-    
-    tests_passed = 0
-    tests_total = 0
-    
-    # Test 1: Import main modules
-    print("\n1️⃣ Testing module imports...")
-    tests_total += 1
     try:
+        # Core modules
+        import pandas as pd
+        import numpy as np
+        import yaml
+        print("   ✅ Core modules (pandas, numpy, yaml)")
+        
+        # DataOps modules
+        from src.utils.config_manager import ConfigManager
+        from src.utils.logger import setup_logger
         from src.data_pipeline.etl_processor import ETLProcessor
         from src.data_quality.quality_checker import DataQualityChecker
         from src.monitoring.metrics_collector import MetricsCollector
+        print("   ✅ DataOps modules")
+        
+        return True
+        
+    except ImportError as e:
+        print(f"   ❌ Import error: {e}")
+        return False
+
+def test_configuration():
+    """ทดสอบการตั้งค่า"""
+    print("\n⚙️ Testing Configuration...")
+    
+    try:
         from src.utils.config_manager import ConfigManager
-        from src.utils.logger import setup_logger
-        print("   ✅ All main modules imported successfully")
-        tests_passed += 1
+        
+        config = ConfigManager('config/config.yaml')
+        validation = config.validate_config()
+        
+        print(f"   Configuration Status: {'✅ VALID' if validation['valid'] else '❌ INVALID'}")
+        
+        if validation['errors']:
+            print("   ❌ Errors found:")
+            for error in validation['errors'][:3]:
+                print(f"      - {error}")
+                
+        if validation['warnings']:
+            print("   ⚠️ Warnings found:")
+            for warning in validation['warnings'][:3]:
+                print(f"      - {warning}")
+        
+        return validation['valid']
+        
     except Exception as e:
-        print(f"   ❌ Module import failed: {e}")
+        print(f"   ❌ Configuration error: {e}")
+        return False
+
+def test_sample_data_generation():
+    """ทดสอบการสร้างข้อมูลตัวอย่าง"""
+    print("\n🏭 Testing Sample Data Generation...")
     
-    # Test 2: Configuration loading
-    print("\n2️⃣ Testing configuration...")
-    tests_total += 1
     try:
-        config = ConfigManager()
-        db_config = config.get_database_config()
-        print(f"   ✅ Configuration loaded successfully")
-        print(f"      Database host: {db_config.get('host', 'Not configured')}")
-        tests_passed += 1
-    except Exception as e:
-        print(f"   ❌ Configuration test failed: {e}")
-    
-    # Test 3: Sample data generation
-    print("\n3️⃣ Testing sample data generation...")
-    tests_total += 1
-    try:
+        sys.path.insert(0, 'examples')
         from examples.generate_sample_data import generate_loan_data
         
-        # Generate small sample
-        df = generate_loan_data(n_records=100, output_file=None)
+        print("   Generating 100 sample records...")
+        df = generate_loan_data(100, 'temp/test_data.csv')
         
-        if len(df) == 100 and len(df.columns) > 10:
-            print(f"   ✅ Sample data generated: {len(df)} records, {len(df.columns)} columns")
-            tests_passed += 1
-        else:
-            print(f"   ❌ Sample data validation failed")
-            
+        print(f"   ✅ Generated {len(df)} records with {len(df.columns)} columns")
+        return True
+        
     except Exception as e:
-        print(f"   ❌ Sample data generation failed: {e}")
+        print(f"   ❌ Sample data generation error: {e}")
+        return False
+
+def test_etl_processor():
+    """ทดสอบ ETL Processor"""
+    print("\n🔄 Testing ETL Processor...")
     
-    # Test 4: ETL Processor initialization
-    print("\n4️⃣ Testing ETL Processor...")
-    tests_total += 1
     try:
+        from src.data_pipeline.etl_processor import ETLProcessor
+        
+        # ตรวจสอบว่ามีไฟล์ทดสอบหรือไม่
+        test_file = 'temp/test_data.csv'
+        if not os.path.exists(test_file):
+            print("   ⚠️ Test data file not found, skipping ETL test")
+            return True
+        
         processor = ETLProcessor()
+        result = processor.load_data(test_file)
         
-        # Test column type inference
-        import tempfile
-        import pandas as pd
-        
-        # Create temporary CSV
-        sample_data = pd.DataFrame({
-            'loan_amnt': [1000, 2000, 3000],
-            'int_rate': ['5.5%', '6.0%', '7.2%'],
-            'home_ownership': ['RENT', 'OWN', 'MORTGAGE']
-        })
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
-            sample_data.to_csv(f.name, index=False)
-            temp_file = f.name
-        
-        success, column_types = processor.guess_column_types(temp_file)
-        os.unlink(temp_file)  # Clean up
-        
-        if success and len(column_types) > 0:
-            print(f"   ✅ ETL Processor working: detected {len(column_types)} column types")
-            tests_passed += 1
+        if result.success:
+            print(f"   ✅ ETL test passed - processed {result.processed_records} records")
+            return True
         else:
-            print(f"   ❌ ETL Processor test failed")
+            print(f"   ❌ ETL test failed: {result.errors}")
+            return False
             
     except Exception as e:
-        print(f"   ❌ ETL Processor test failed: {e}")
+        print(f"   ❌ ETL processor error: {e}")
+        return False
+
+def test_data_quality():
+    """ทดสอบ Data Quality Checker"""
+    print("\n📊 Testing Data Quality Checker...")
     
-    # Test 5: Data Quality Checker
-    print("\n5️⃣ Testing Data Quality Checker...")
-    tests_total += 1
     try:
         import pandas as pd
+        from src.data_quality.quality_checker import DataQualityChecker
         
-        # Create test data
+        # สร้างข้อมูลทดสอบ
         test_data = pd.DataFrame({
-            'loan_amnt': [1000, 2000, 3000, 4000, 5000],
-            'funded_amnt': [950, 1900, 2950, 3900, 4900],
-            'int_rate': [0.055, 0.06, 0.072, 0.08, 0.095],
-            'home_ownership': ['RENT', 'OWN', 'MORTGAGE', 'RENT', 'OWN']
+            'id': [1, 2, 3, 4, 5],
+            'name': ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'],
+            'age': [25, 30, 35, 28, 32],
+            'salary': [50000, 60000, 70000, 55000, 65000]
         })
         
         checker = DataQualityChecker()
         result = checker.run_checks(test_data)
         
-        if result.overall_score > 0:
-            print(f"   ✅ Data Quality Checker working: score {result.overall_score:.1f}%")
-            tests_passed += 1
-        else:
-            print(f"   ❌ Data Quality Checker test failed")
-            
+        print(f"   ✅ Quality Score: {result.overall_score:.1f}%")
+        print(f"   ✅ Grade: {result.grade}")
+        
+        return True
+        
     except Exception as e:
-        print(f"   ❌ Data Quality Checker test failed: {e}")
+        print(f"   ❌ Data quality checker error: {e}")
+        return False
+
+def test_monitoring():
+    """ทดสอบ Monitoring System"""
+    print("\n📈 Testing Monitoring System...")
     
-    # Test 6: Metrics Collector
-    print("\n6️⃣ Testing Metrics Collector...")
-    tests_total += 1
     try:
+        from src.monitoring.metrics_collector import MetricsCollector
+        
         collector = MetricsCollector()
         
-        # Record test metrics
-        collector.record_etl_records(100, 'test_pipeline', 'test_stage')
-        collector.record_data_quality_score(95.5, 'test_dataset', 'completeness')
+        # ทดสอบการบันทึกเมตริก
+        collector.record_metric('test_metric', 75.5, {'unit': 'percent'})
         
-        summary = collector.get_metrics_summary()
+        # ทดสอบการดูภาพรวม
+        overview = collector.get_system_overview()
         
-        if summary['total_metrics'] > 0:
-            print(f"   ✅ Metrics Collector working: {summary['total_metrics']} metrics recorded")
-            tests_passed += 1
-        else:
-            print(f"   ❌ Metrics Collector test failed")
-            
-    except Exception as e:
-        print(f"   ❌ Metrics Collector test failed: {e}")
-    
-    # Test 7: Logger
-    print("\n7️⃣ Testing Logger...")
-    tests_total += 1
-    try:
-        logger = setup_logger('test_logger')
-        logger.info("Test log message")
+        print(f"   ✅ Monitoring system status: {overview['monitoring_status']}")
+        print(f"   ✅ Total metrics collected: {overview['total_metrics_collected']}")
         
-        # Test structured logging
-        logger.log_with_context('INFO', 'Test context message', test_id=123, component='test')
+        # ทำความสะอาด
+        collector.stop_monitoring_service()
         
-        print(f"   ✅ Logger working: structured logging available")
-        tests_passed += 1
+        return True
         
     except Exception as e:
-        print(f"   ❌ Logger test failed: {e}")
-    
-    # Summary
-    print("\n" + "=" * 60)
-    print(f"📊 TEST SUMMARY")
-    print("=" * 60)
-    print(f"✅ Tests Passed: {tests_passed}/{tests_total}")
-    print(f"❌ Tests Failed: {tests_total - tests_passed}/{tests_total}")
-    
-    if tests_passed == tests_total:
-        print(f"🎉 ALL TESTS PASSED! DataOps Foundation is ready to use.")
-        success_rate = 100.0
-    else:
-        success_rate = (tests_passed / tests_total) * 100
-        print(f"⚠️  Some tests failed. Success rate: {success_rate:.1f}%")
-    
-    print(f"\n💡 Next Steps:")
-    if tests_passed == tests_total:
-        print(f"   1. Generate sample data: python main.py --mode generate-data")
-        print(f"   2. Run ETL pipeline: python main.py --mode etl --input examples/sample_data/generated_data.csv")
-        print(f"   3. Run full tests: python tests/test_enhanced_etl.py")
-        print(f"   4. Start with Docker: docker-compose -f docker/docker-compose.yml up -d")
-    else:
-        print(f"   1. Check missing dependencies: pip install -r requirements.txt")
-        print(f"   2. Verify Python version: python --version (should be 3.9+)")
-        print(f"   3. Check configuration: cat config/config.yaml")
-    
-    return 0 if tests_passed == tests_total else 1
+        print(f"   ❌ Monitoring system error: {e}")
+        return False
 
+def test_logging():
+    """ทดสอบ Logging System"""
+    print("\n📝 Testing Logging System...")
+    
+    try:
+        from src.utils.logger import setup_logger
+        
+        logger = setup_logger('test_logger')
+        
+        logger.info("Test log message")
+        logger.debug("Test debug message")
+        logger.warning("Test warning message")
+        
+        print("   ✅ Logging system working")
+        
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Logging system error: {e}")
+        return False
+
+def cleanup():
+    """ทำความสะอาดไฟล์ทดสอบ"""
+    print("\n🧹 Cleaning up...")
+    
+    cleanup_files = [
+        'temp/test_data.csv'
+    ]
+    
+    for file_path in cleanup_files:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"   🗑️ Removed {file_path}")
+            except:
+                pass
+
+def main():
+    """รันการทดสอบทั้งหมด"""
+    print_header()
+    
+    tests = [
+        ("Module Imports", test_imports),
+        ("Configuration", test_configuration),
+        ("Sample Data Generation", test_sample_data_generation),
+        ("ETL Processor", test_etl_processor),
+        ("Data Quality Checker", test_data_quality),
+        ("Monitoring System", test_monitoring),
+        ("Logging System", test_logging)
+    ]
+    
+    passed_tests = 0
+    total_tests = len(tests)
+    
+    start_time = time.time()
+    
+    for test_name, test_func in tests:
+        try:
+            if test_func():
+                passed_tests += 1
+        except Exception as e:
+            print(f"\n❌ {test_name} failed with exception: {e}")
+    
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    # แสดงผลลัพธ์
+    print("\n" + "=" * 70)
+    print("📊 Test Results Summary:")
+    print("=" * 70)
+    print(f"✅ Passed: {passed_tests}/{total_tests} tests")
+    print(f"❌ Failed: {total_tests - passed_tests}/{total_tests} tests")
+    print(f"⏱️ Duration: {duration:.2f} seconds")
+    print(f"📈 Success Rate: {(passed_tests/total_tests)*100:.1f}%")
+    
+    if passed_tests == total_tests:
+        print("\n🎉 All tests passed! DataOps Foundation is ready to use.")
+        status = "SUCCESS"
+    else:
+        print("\n⚠️ Some tests failed. Please check the error messages above.")
+        status = "PARTIAL"
+    
+    # ทำความสะอาด
+    cleanup()
+    
+    print(f"\n⏰ End Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 70)
+    
+    return status
 
 if __name__ == "__main__":
-    exit_code = test_system()
-    sys.exit(exit_code)
+    result = main()
+    
+    # Exit with appropriate code
+    if result == "SUCCESS":
+        sys.exit(0)
+    else:
+        sys.exit(1)

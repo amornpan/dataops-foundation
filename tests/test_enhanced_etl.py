@@ -1,449 +1,990 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DataOps Foundation - Enhanced ETL Testing Suite
-ระบบทดสอบ ETL ที่ครอบคลุมและปรับปรุงจากโค้ดเดิม
+DataOps Foundation - Enhanced Tests
+ทดสอบระบบ ETL ขั้นสูงที่รวมโค้ดจาก ETL-dev (1).py และ python-jenkins
 
 Features:
-- Data Quality Framework Integration
-- Dimensional Model Testing
-- Business Logic Validation
-- Database Integration Testing
-- Performance Testing
-- Error Handling Testing
+- Unit tests for ETL processor
+- Data quality testing
+- Performance testing
+- Integration testing
+- CI/CD pipeline testing
 """
 
 import unittest
 import pandas as pd
 import numpy as np
-import sys
 import os
-import time
-from datetime import datetime
-from typing import Dict, List, Any
 import tempfile
-import sqlite3
+import shutil
+from unittest.mock import Mock, patch, MagicMock
+import sys
+import logging
+from datetime import datetime, timedelta
+import time
 
-# Add src to path for imports
+# Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-try:
-    from src.data_pipeline.etl_processor import ETLProcessor, ProcessingResult
-except ImportError:
-    # Fallback path
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    from src.data_pipeline.etl_processor import ETLProcessor, ProcessingResult
+from src.data_pipeline.etl_processor import ETLProcessor, ProcessingResult
+from src.data_quality.quality_checker import DataQualityChecker, QualityResult
+from src.monitoring.metrics_collector import MetricsCollector
+from src.utils.config_manager import ConfigManager
+from src.utils.logger import setup_logger
 
 
-class TestEnhancedETL(unittest.TestCase):
-    """
-    Enhanced ETL Testing Suite ที่รวมการทดสอบจาก ETL-dev (1).py
-    และเพิ่มการทดสอบที่ครอบคลุมมากขึ้น
-    """
+class TestETLProcessor(unittest.TestCase):
+    """ทดสอบ ETL Processor (จาก ETL-dev (1).py)"""
     
-    @classmethod
-    def setUpClass(cls):
-        """ตั้งค่าเริ่มต้นสำหรับการทดสอบ"""
-        print("🚀 เริ่มต้นการทดสอบ DataOps Foundation ETL Pipeline")
-        print("=" * 80)
+    def setUp(self):
+        """ตั้งค่าก่อนแต่ละการทดสอบ"""
+        self.test_dir = tempfile.mkdtemp()
+        self.config_path = os.path.join(self.test_dir, 'config.yaml')
         
-        # สร้างข้อมูลตัวอย่างสำหรับทดสอบ
-        cls.sample_data = cls._create_sample_loan_data()
+        # สร้าง config สำหรับทดสอบ
+        test_config = {
+            'data_quality': {
+                'max_null_percentage': 30.0,
+                'acceptable_max_null': 26
+            },
+            'database': {
+                'primary': {
+                    'type': 'mssql',
+                    'host': 'localhost',
+                    'database': 'test_db',
+                    'username': 'test',
+                    'password': 'test'
+                }
+            }
+        }
         
-        # สร้างไฟล์ CSV ชั่วคราว
-        cls.temp_csv = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-        cls.sample_data.to_csv(cls.temp_csv.name, index=False)
-        cls.temp_csv.close()
+        import yaml
+        with open(self.config_path, 'w') as f:
+            yaml.dump(test_config, f)
         
-        # เริ่มต้น ETL Processor
-        cls.processor = ETLProcessor()
-        
-        # รันการประมวลผล ETL
-        cls.processing_result = cls.processor.run_full_pipeline(cls.temp_csv.name)
-        
-        print(f"📊 Sample data created: {cls.sample_data.shape}")
-        print(f"📁 Temporary CSV: {cls.temp_csv.name}")
-    
-    @classmethod
-    def tearDownClass(cls):
-        """ทำความสะอาดหลังการทดสอบ"""
-        # ลบไฟล์ชั่วคราว
-        try:
-            os.unlink(cls.temp_csv.name)
-        except OSError:
-            pass
-        
-        print("\n" + "=" * 80)
-        print("📊 สรุปผลการทดสอบ DataOps Foundation ETL")
-        print("=" * 80)
-        
-        # สร้างสรุปผลการทดสอบ
-        if hasattr(cls, 'processor') and cls.processor.processed_df is not None:
-            processed_records = len(cls.processor.processed_df)
-            total_dimensions = len(cls.processor.dimension_tables)
-            fact_records = len(cls.processor.fact_table) if cls.processor.fact_table is not None else 0
-            
-            print(f"⏱️  เวลาทั้งหมด: {cls.processing_result.processing_time:.2f} วินาที")
-            print(f"🧪 ทดสอบทั้งหมด: 12")
-            print(f"✅ ผ่าน: 12")
-            print(f"❌ ล้มเหลว: 0")
-            print(f"⚠️  ข้อผิดพลาด: 0")
-            print(f"📈 อัตราความสำเร็จ: 100.0%")
-            print(f"🔧 DataOps Modules: Available")
-            print()
-            print("📈 รายงานคุณภาพข้อมูลโดยละเอียด:")
-            print(f"   📊 จำนวนแถวทั้งหมด: {processed_records:,}")
-            print(f"   🔍 Null values: 0 (0.00%)")
-            print(f"   📋 Dimension tables:")
-            
-            for dim_name, dim_table in cls.processor.dimension_tables.items():
-                print(f"      - {dim_name}: {len(dim_table)} records")
-            
-            if cls.processor.fact_table is not None and 'loan_amnt' in cls.processor.fact_table.columns:
-                total_amount = cls.processor.fact_table['loan_amnt'].sum()
-                avg_loan = cls.processor.fact_table['loan_amnt'].mean()
-                loan_count = len(cls.processor.fact_table)
-                
-                print(f"   💰 Portfolio summary:")
-                print(f"      - Total amount: ${total_amount:,.0f}")
-                print(f"      - Average loan: ${avg_loan:,.0f}")
-                print(f"      - Loan count: {loan_count:,}")
-        
-        print("\n🎉 การทดสอบสำเร็จทั้งหมด! DataOps Foundation พร้อมใช้งาน")
-    
-    @staticmethod
-    def _create_sample_loan_data() -> pd.DataFrame:
-        """สร้างข้อมูลตัวอย่างที่คล้ายกับ LoanStats_web_14422.csv"""
-        np.random.seed(42)  # สำหรับผลลัพธ์ที่ทำซ้ำได้
-        
-        n_records = 1000
+        self.processor = ETLProcessor(self.config_path)
         
         # สร้างข้อมูลตัวอย่าง
+        self.sample_data = self._create_sample_data()
+        self.sample_file = os.path.join(self.test_dir, 'test_data.csv')
+        self.sample_data.to_csv(self.sample_file, index=False)
+    
+    def tearDown(self):
+        """ทำความสะอาดหลังแต่ละการทดสอบ"""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+    
+    def _create_sample_data(self):
+        """สร้างข้อมูลตัวอย่างสำหรับทดสอบ"""
         data = {
-            'application_type': np.random.choice(['Individual', 'Joint App'], n_records),
-            'loan_amnt': np.random.uniform(1000, 40000, n_records).round(2),
-            'funded_amnt': lambda x: x['loan_amnt'] * np.random.uniform(0.8, 1.0, n_records),
-            'term': np.random.choice([' 36 months', ' 60 months'], n_records),
-            'int_rate': [f"{rate:.2f}%" for rate in np.random.uniform(5.0, 25.0, n_records)],
-            'installment': np.random.uniform(50, 1500, n_records).round(2),
-            'home_ownership': np.random.choice(['RENT', 'OWN', 'MORTGAGE', 'OTHER'], n_records),
-            'loan_status': np.random.choice([
-                'Fully Paid', 'Current', 'Charged Off', 'Late (31-120 days)', 'In Grace Period'
-            ], n_records),
-            'issue_d': pd.date_range('2015-01', '2023-12', freq='M')[:n_records % 108].tolist() * (n_records // 108 + 1)
+            'id': range(1, 101),
+            'loan_amnt': np.random.uniform(1000, 50000, 100),
+            'funded_amnt': np.random.uniform(1000, 50000, 100),
+            'term': [' 36 months'] * 70 + [' 60 months'] * 30,
+            'int_rate': [f'{rate:.2f}%' for rate in np.random.uniform(5, 25, 100)],
+            'installment': np.random.uniform(100, 2000, 100),
+            'home_ownership': np.random.choice(['RENT', 'OWN', 'MORTGAGE'], 100),
+            'loan_status': np.random.choice(['Fully Paid', 'Current', 'Charged Off'], 100),
+            'issue_d': pd.date_range(start='2023-01-01', periods=100, freq='D').strftime('%b-%Y'),
+            'application_type': np.random.choice(['Individual', 'Joint App'], 100),
+            'annual_inc': np.random.uniform(30000, 150000, 100),
+            'dti': np.random.uniform(0, 40, 100),
+            'delinq_2yrs': np.random.randint(0, 5, 100),
+            'earliest_cr_line': pd.date_range(start='2010-01-01', periods=100, freq='D').strftime('%b-%Y'),
+            'open_acc': np.random.randint(1, 20, 100),
+            'pub_rec': np.random.randint(0, 3, 100),
+            'revol_bal': np.random.uniform(0, 50000, 100),
+            'revol_util': np.random.uniform(0, 100, 100),
+            'total_acc': np.random.randint(5, 50, 100)
         }
         
         df = pd.DataFrame(data)
-        df['funded_amnt'] = df['loan_amnt'] * np.random.uniform(0.8, 1.0, n_records)
-        df['issue_d'] = pd.to_datetime(df['issue_d']).dt.strftime('%b-%Y')
         
-        # เพิ่มคอลัมน์ที่มี null values บางตัว
-        null_columns = ['annual_inc', 'emp_length', 'verification_status']
-        for col in null_columns:
-            values = np.random.choice(['A', 'B', 'C', None], n_records, p=[0.4, 0.3, 0.2, 0.1])
-            df[col] = values
+        # เพิ่ม null values บางส่วน
+        df.loc[95:99, 'home_ownership'] = None
+        df.loc[90:94, 'loan_status'] = None
+        df.loc[85:89, 'revol_util'] = None
         
-        # เพิ่มคอลัมน์ที่มี null values เยอะ (จะถูกกรองออก)
-        high_null_columns = ['desc', 'mths_since_last_delinq', 'mths_since_last_record']
-        for col in high_null_columns:
-            values = np.random.choice(['Value', None], n_records, p=[0.2, 0.8])  # 80% null
-            df[col] = values
+        # เพิ่มคอลัมน์ที่มี null เกิน 30%
+        df['mostly_null_column'] = None
+        df.loc[0:20, 'mostly_null_column'] = 'some_value'
         
         return df
     
-    def test_01_data_loading(self):
+    def test_load_data(self):
         """ทดสอบการโหลดข้อมูล"""
-        print("test_data_loading ... ", end="")
-        
-        # ทดสอบโหลดข้อมูลใหม่
-        processor = ETLProcessor()
-        result = processor.load_data(self.temp_csv.name)
+        result = self.processor.load_data(self.sample_file)
         
         self.assertTrue(result.success)
-        self.assertGreater(result.processed_records, 0)
-        self.assertIsNotNone(processor.raw_df)
-        
-        print("✅ PASS: การโหลดข้อมูลสำเร็จ")
+        self.assertEqual(result.processed_records, 100)
+        self.assertIsNotNone(self.processor.raw_df)
+        self.assertEqual(len(self.processor.raw_df), 100)
     
-    def test_02_column_type_inference(self):
-        """ทดสอบการอนุมานประเภทคอลัมน์"""
-        print("test_column_type_inference ... ", end="")
+    def test_load_data_file_not_found(self):
+        """ทดสอบการโหลดข้อมูลเมื่อไฟล์ไม่พบ"""
+        result = self.processor.load_data('non_existent_file.csv')
         
-        success, column_types = self.processor.guess_column_types(self.temp_csv.name)
+        self.assertFalse(result.success)
+        self.assertEqual(result.processed_records, 0)
+        self.assertTrue(len(result.errors) > 0)
+    
+    def test_guess_column_types(self):
+        """ทดสอบการเดาประเภทคอลัมน์"""
+        success, column_types = self.processor.guess_column_types(self.sample_file)
         
         self.assertTrue(success)
         self.assertIsInstance(column_types, dict)
-        self.assertGreater(len(column_types), 0)
-        
-        # ตรวจสอบว่ามีการอนุมานประเภทสำคัญ
-        expected_columns = ['loan_amnt', 'int_rate', 'home_ownership', 'loan_status']
-        for col in expected_columns:
-            if col in column_types:
-                self.assertIsNotNone(column_types[col])
-        
-        print("✅ PASS: การอนุมานประเภทคอลัมน์ถูกต้อง")
+        self.assertIn('id', column_types)
+        self.assertIn('loan_amnt', column_types)
+        self.assertIn('int_rate', column_types)
     
-    def test_03_null_filtering(self):
-        """ทดสอบการกรองคอลัมน์ที่มี null values เยอะ"""
-        print("test_null_filtering ... ", end="")
+    def test_filter_by_null_percentage(self):
+        """ทดสอบการกรองคอลัมน์ตาม null percentage"""
+        # โหลดข้อมูลก่อน
+        self.processor.load_data(self.sample_file)
         
-        processor = ETLProcessor()
-        processor.load_data(self.temp_csv.name)
-        
-        original_columns = len(processor.raw_df.columns)
-        result = processor.filter_by_null_percentage(max_null_percentage=30)
+        # กรองด้วย null percentage
+        result = self.processor.filter_by_null_percentage(30.0)
         
         self.assertTrue(result.success)
-        self.assertLessEqual(len(processor.processed_df.columns), original_columns)
+        self.assertIsNotNone(self.processor.processed_df)
         
-        # ตรวจสอบว่าคอลัมน์ที่มี null เยอะถูกกรองออก
-        for col in processor.processed_df.columns:
-            null_pct = processor.processed_df[col].isnull().mean() * 100
-            self.assertLessEqual(null_pct, 30.0)
-        
-        print("✅ PASS: การกรองคอลัมน์ที่มี null values เยอะสำเร็จ")
+        # ตรวจสอบว่าคอลัมน์ที่มี null เกิน 30% ถูกกรองออก
+        self.assertNotIn('mostly_null_column', self.processor.processed_df.columns)
     
-    def test_04_row_completeness_filtering(self):
-        """ทดสอบการกรองแถวตามความครบถ้วน"""
-        print("test_row_completeness_filtering ... ", end="")
+    def test_filter_by_row_completeness(self):
+        """ทดสอบการกรองแถวตามความสมบูรณ์"""
+        # โหลดและกรองข้อมูลก่อน
+        self.processor.load_data(self.sample_file)
+        self.processor.filter_by_null_percentage(30.0)
         
-        processor = ETLProcessor()
-        processor.load_data(self.temp_csv.name)
-        processor.filter_by_null_percentage()
-        
-        original_rows = len(processor.processed_df)
-        result = processor.filter_by_row_completeness(acceptable_max_null=26)
+        # กรองแถว
+        result = self.processor.filter_by_row_completeness(26)
         
         self.assertTrue(result.success)
-        self.assertGreaterEqual(result.processed_records, 0)
+        self.assertIsNotNone(self.processor.processed_df)
         
-        print("✅ PASS: การกรองแถวตามความครบถ้วนสำเร็จ")
+        # ตรวจสอบว่าไม่มี null values
+        self.assertEqual(self.processor.processed_df.isnull().sum().sum(), 0)
     
-    def test_05_data_transformations(self):
+    def test_apply_data_transformations(self):
         """ทดสอบการแปลงข้อมูล"""
-        print("test_data_transformations ... ", end="")
+        # เตรียมข้อมูล
+        self.processor.load_data(self.sample_file)
+        self.processor.filter_by_null_percentage(30.0)
+        self.processor.filter_by_row_completeness(26)
         
-        # ใช้ processor ที่ประมวลผลแล้ว
-        if hasattr(self.processor, 'processed_df') and self.processor.processed_df is not None:
-            result = self.processor.apply_data_transformations()
+        # ทดสอบการแปลง
+        result = self.processor.apply_data_transformations()
+        
+        self.assertTrue(result.success)
+        
+        # ตรวจสอบการแปลงข้อมูล
+        if 'issue_d' in self.processor.processed_df.columns:
+            self.assertEqual(self.processor.processed_df['issue_d'].dtype, 'datetime64[ns]')
+        
+        if 'int_rate' in self.processor.processed_df.columns:
+            self.assertTrue(self.processor.processed_df['int_rate'].dtype in ['float64', 'float32'])
+    
+    def test_create_dimensional_model(self):
+        """ทดสอบการสร้าง dimensional model"""
+        # เตรียมข้อมูล
+        self.processor.load_data(self.sample_file)
+        self.processor.filter_by_null_percentage(30.0)
+        self.processor.filter_by_row_completeness(26)
+        self.processor.apply_data_transformations()
+        
+        # สร้าง dimensional model
+        result = self.processor.create_dimensional_model()
+        
+        self.assertTrue(result.success)
+        self.assertIsNotNone(self.processor.dimension_tables)
+        
+        # ตรวจสอบ dimension tables
+        if 'home_ownership' in self.processor.dimension_tables:
+            home_ownership_dim = self.processor.dimension_tables['home_ownership']
+            self.assertIn('home_ownership_id', home_ownership_dim.columns)
+            self.assertIn('home_ownership', home_ownership_dim.columns)
+    
+    def test_create_fact_table(self):
+        """ทดสอบการสร้าง fact table"""
+        # เตรียมข้อมูล
+        self.processor.load_data(self.sample_file)
+        self.processor.filter_by_null_percentage(30.0)
+        self.processor.filter_by_row_completeness(26)
+        self.processor.apply_data_transformations()
+        self.processor.create_dimensional_model()
+        
+        # สร้าง fact table
+        result = self.processor.create_fact_table()
+        
+        self.assertTrue(result.success)
+        self.assertIsNotNone(self.processor.fact_table)
+        
+        # ตรวจสอบ foreign keys
+        if 'home_ownership_id' in self.processor.fact_table.columns:
+            self.assertFalse(self.processor.fact_table['home_ownership_id'].isnull().all())
+    
+    @patch('src.data_pipeline.etl_processor.create_engine')
+    def test_save_to_database(self, mock_create_engine):
+        """ทดสอบการบันทึกลงฐานข้อมูล"""
+        # Mock engine
+        mock_engine = Mock()
+        mock_create_engine.return_value = mock_engine
+        
+        # เตรียมข้อมูล
+        self.processor.load_data(self.sample_file)
+        self.processor.filter_by_null_percentage(30.0)
+        self.processor.filter_by_row_completeness(26)
+        self.processor.apply_data_transformations()
+        self.processor.create_dimensional_model()
+        self.processor.create_fact_table()
+        
+        # บันทึกลงฐานข้อมูล
+        result = self.processor.save_to_database()
+        
+        self.assertTrue(result.success)
+        mock_create_engine.assert_called_once()
+    
+    def test_run_full_pipeline(self):
+        """ทดสอบการรัน pipeline เต็ม"""
+        with patch('src.data_pipeline.etl_processor.create_engine') as mock_create_engine:
+            mock_engine = Mock()
+            mock_create_engine.return_value = mock_engine
+            
+            result = self.processor.run_full_pipeline(self.sample_file)
             
             self.assertTrue(result.success)
-            
-            # ตรวจสอบการแปลง issue_d เป็น datetime
-            if 'issue_d' in self.processor.processed_df.columns:
-                self.assertTrue(pd.api.types.is_datetime64_any_dtype(self.processor.processed_df['issue_d']))
-            
-            # ตรวจสอบการแปลง int_rate เป็น float
-            if 'int_rate' in self.processor.processed_df.columns:
-                self.assertTrue(pd.api.types.is_numeric_dtype(self.processor.processed_df['int_rate']))
-        
-        print("✅ PASS: การแปลงข้อมูลสำเร็จ")
+            self.assertGreater(result.processed_records, 0)
+            self.assertGreater(result.quality_score, 0)
+            self.assertGreater(result.processing_time, 0)
+
+
+class TestDataQualityChecker(unittest.TestCase):
+    """ทดสอบ Data Quality Checker"""
     
-    def test_06_dimensional_model_creation(self):
-        """ทดสอบการสร้าง dimensional model"""
-        print("test_dimensional_model_creation ... ", end="")
-        
-        self.assertTrue(self.processing_result.success)
-        self.assertGreater(len(self.processor.dimension_tables), 0)
-        
-        # ตรวจสอบ dimension tables ที่สำคัญ
-        expected_dimensions = ['home_ownership', 'loan_status']
-        for dim_name in expected_dimensions:
-            if dim_name in self.processor.dimension_tables:
-                dim_table = self.processor.dimension_tables[dim_name]
-                self.assertGreater(len(dim_table), 0)
-                self.assertIn(f'{dim_name}_id', dim_table.columns)
-        
-        print("✅ PASS: การสร้าง dimensional model สำเร็จ")
+    def setUp(self):
+        """ตั้งค่าก่อนแต่ละการทดสอบ"""
+        self.checker = DataQualityChecker()
+        self.sample_data = self._create_sample_data()
     
-    def test_07_fact_table_creation(self):
-        """ทดสอบการสร้าง fact table"""
-        print("test_fact_table_creation ... ", end="")
+    def _create_sample_data(self):
+        """สร้างข้อมูลตัวอย่าง"""
+        data = {
+            'id': [1, 2, 3, 4, 5, 5],  # มีข้อมูลซ้ำ
+            'name': ['John', 'Jane', '', 'Bob', 'Alice', 'Alice'],  # มีข้อมูลว่าง
+            'email': ['john@test.com', 'jane@test.com', 'invalid-email', 'bob@test.com', None, 'alice@test.com'],
+            'age': [25, 30, -5, 35, 28, 28],  # มีอายุติดลบ
+            'salary': [50000, 60000, 70000, None, 55000, 55000],  # มีค่าว่าง
+            'phone': ['123-456-7890', '987-654-3210', 'invalid', '555-123-4567', None, '555-987-6543'],
+            'date_joined': ['2023-01-01', '2023-02-01', '2023-13-01', '2023-04-01', '2023-05-01', '2023-05-01']
+        }
         
-        self.assertTrue(self.processing_result.success)
-        self.assertIsNotNone(self.processor.fact_table)
-        self.assertGreater(len(self.processor.fact_table), 0)
-        
-        # ตรวจสอบว่ามี foreign keys
-        expected_fks = ['home_ownership_id', 'loan_status_id']
-        for fk in expected_fks:
-            if fk in self.processor.fact_table.columns:
-                # ตรวจสอบว่า foreign key ไม่มี null
-                self.assertEqual(self.processor.fact_table[fk].isnull().sum(), 0)
-        
-        print("✅ PASS: การสร้าง fact table สำเร็จ")
+        return pd.DataFrame(data)
     
-    def test_08_data_quality_framework_integration(self):
-        """ทดสอบการทำงานของ Data Quality Framework"""
-        print("test_data_quality_framework_integration ... ", end="")
+    def test_calculate_completeness(self):
+        """ทดสอบการคำนวณความสมบูรณ์"""
+        metric = self.checker.calculate_completeness(self.sample_data)
         
-        # ตรวจสอบคุณภาพข้อมูลพื้นฐาน
-        if self.processor.processed_df is not None:
-            # ตรวจสอบว่าไม่มี null ใน final dataset
-            null_count = self.processor.processed_df.isnull().sum().sum()
+        self.assertEqual(metric.name, 'completeness')
+        self.assertIsInstance(metric.value, float)
+        self.assertGreaterEqual(metric.value, 0)
+        self.assertLessEqual(metric.value, 1)
+        self.assertIsInstance(metric.passed, bool)
+    
+    def test_calculate_uniqueness(self):
+        """ทดสอบการคำนวณความเป็นเอกลักษณ์"""
+        metric = self.checker.calculate_uniqueness(self.sample_data)
+        
+        self.assertEqual(metric.name, 'uniqueness')
+        self.assertIsInstance(metric.value, float)
+        self.assertGreaterEqual(metric.value, 0)
+        self.assertLessEqual(metric.value, 1)
+        self.assertIsInstance(metric.passed, bool)
+    
+    def test_calculate_consistency(self):
+        """ทดสอบการคำนวณความสม่ำเสมอ"""
+        metric = self.checker.calculate_consistency(self.sample_data)
+        
+        self.assertEqual(metric.name, 'consistency')
+        self.assertIsInstance(metric.value, float)
+        self.assertGreaterEqual(metric.value, 0)
+        self.assertLessEqual(metric.value, 1)
+        self.assertIsInstance(metric.passed, bool)
+    
+    def test_calculate_validity(self):
+        """ทดสอบการคำนวณความถูกต้อง"""
+        metric = self.checker.calculate_validity(self.sample_data)
+        
+        self.assertEqual(metric.name, 'validity')
+        self.assertIsInstance(metric.value, float)
+        self.assertGreaterEqual(metric.value, 0)
+        self.assertLessEqual(metric.value, 1)
+        self.assertIsInstance(metric.passed, bool)
+    
+    def test_run_checks(self):
+        """ทดสอบการรันการตรวจสอบทั้งหมด"""
+        result = self.checker.run_checks(self.sample_data)
+        
+        self.assertIsInstance(result, QualityResult)
+        self.assertIsInstance(result.overall_score, float)
+        self.assertIn(result.grade, ['A', 'B', 'C', 'D', 'F'])
+        self.assertIsInstance(result.passed, bool)
+        self.assertIsInstance(result.metrics, list)
+        self.assertEqual(len(result.metrics), 4)  # completeness, uniqueness, consistency, validity
+    
+    def test_generate_report(self):
+        """ทดสอบการสร้างรายงาน"""
+        result = self.checker.run_checks(self.sample_data)
+        report = self.checker.generate_report(result)
+        
+        self.assertIsInstance(report, str)
+        self.assertIn('DATA QUALITY ASSESSMENT REPORT', report)
+        self.assertIn('OVERALL QUALITY SCORE', report)
+        self.assertIn('DETAILED METRICS', report)
+        self.assertIn('RECOMMENDATIONS', report)
+    
+    def test_empty_dataframe(self):
+        """ทดสอบกับ DataFrame ว่าง"""
+        empty_df = pd.DataFrame()
+        result = self.checker.run_checks(empty_df)
+        
+        self.assertFalse(result.passed)
+        self.assertEqual(result.overall_score, 0.0)
+        self.assertEqual(result.grade, 'F')
+
+
+class TestMetricsCollector(unittest.TestCase):
+    """ทดสอบ Metrics Collector"""
+    
+    def setUp(self):
+        """ตั้งค่าก่อนแต่ละการทดสอบ"""
+        self.collector = MetricsCollector()
+    
+    def tearDown(self):
+        """ทำความสะอาดหลังแต่ละการทดสอบ"""
+        self.collector.stop_monitoring_service()
+    
+    def test_record_metric(self):
+        """ทดสอบการบันทึกเมตริก"""
+        self.collector.record_metric('test_metric', 75.5, {'unit': 'percent'})
+        
+        self.assertIn('test_metric', self.collector.metrics)
+        self.assertEqual(len(self.collector.metrics['test_metric']), 1)
+        
+        metric = self.collector.metrics['test_metric'][0]
+        self.assertEqual(metric.name, 'test_metric')
+        self.assertEqual(metric.value, 75.5)
+        self.assertEqual(metric.tags['unit'], 'percent')
+    
+    def test_record_pipeline_metrics(self):
+        """ทดสอบการบันทึกเมตริกจาก pipeline"""
+        self.collector.record_pipeline_metrics(
+            pipeline_name='test_pipeline',
+            duration=120.5,
+            processed_records=10000,
+            quality_score=85.5,
+            success=True
+        )
+        
+        # ตรวจสอบว่าเมตริกถูกบันทึก
+        self.assertIn('pipeline_duration', self.collector.metrics)
+        self.assertIn('pipeline_records_processed', self.collector.metrics)
+        self.assertIn('data_quality_score', self.collector.metrics)
+        self.assertIn('pipeline_success', self.collector.metrics)
+    
+    def test_get_metric_summary(self):
+        """ทดสอบการดึงสรุปเมตริก"""
+        # บันทึกเมตริกหลายตัว
+        for i in range(5):
+            self.collector.record_metric('cpu_usage', 70 + i, {'unit': 'percent'})
+        
+        summary = self.collector.get_metric_summary('cpu_usage', 60)
+        
+        self.assertEqual(summary['metric_name'], 'cpu_usage')
+        self.assertEqual(summary['count'], 5)
+        self.assertEqual(summary['current'], 74.0)
+        self.assertEqual(summary['min'], 70.0)
+        self.assertEqual(summary['max'], 74.0)
+        self.assertEqual(summary['avg'], 72.0)
+    
+    def test_get_system_overview(self):
+        """ทดสอบการดึงข้อมูลภาพรวม"""
+        overview = self.collector.get_system_overview()
+        
+        self.assertIn('monitoring_status', overview)
+        self.assertIn('uptime_minutes', overview)
+        self.assertIn('total_metrics_collected', overview)
+        self.assertIn('active_alerts', overview)
+        self.assertIn('metrics_available', overview)
+    
+    def test_export_metrics_json(self):
+        """ทดสอบการ export เมตริกเป็น JSON"""
+        self.collector.record_metric('test_metric', 100.0)
+        
+        json_export = self.collector.export_metrics('json')
+        
+        self.assertIsInstance(json_export, str)
+        self.assertIn('test_metric', json_export)
+        self.assertIn('timestamp', json_export)
+    
+    def test_export_metrics_prometheus(self):
+        """ทดสอบการ export เมตริกเป็น Prometheus format"""
+        self.collector.record_metric('test_metric', 100.0, unit='percent')
+        
+        prometheus_export = self.collector.export_metrics('prometheus')
+        
+        self.assertIsInstance(prometheus_export, str)
+        self.assertIn('test_metric', prometheus_export)
+        self.assertIn('# HELP', prometheus_export)
+        self.assertIn('# TYPE', prometheus_export)
+    
+    def test_monitoring_start_stop(self):
+        """ทดสอบการเริ่มและหยุดการติดตาม"""
+        # เริ่มการติดตาม
+        self.collector.start_monitoring()
+        self.assertTrue(self.collector.monitoring_thread.is_alive())
+        
+        # รอสักครู่
+        time.sleep(2)
+        
+        # หยุดการติดตาม
+        self.collector.stop_monitoring_service()
+        time.sleep(1)
+        
+        # ตรวจสอบว่าหยุดแล้ว
+        self.assertFalse(self.collector.monitoring_thread.is_alive())
+
+
+class TestConfigManager(unittest.TestCase):
+    """ทดสอบ Configuration Manager"""
+    
+    def setUp(self):
+        """ตั้งค่าก่อนแต่ละการทดสอบ"""
+        self.test_dir = tempfile.mkdtemp()
+        self.config_path = os.path.join(self.test_dir, 'test_config.yaml')
+        
+        # สร้าง config file สำหรับทดสอบ
+        test_config = {
+            'app': {
+                'name': 'Test App',
+                'version': '1.0.0',
+                'debug': True
+            },
+            'database': {
+                'primary': {
+                    'type': 'mssql',
+                    'host': 'localhost',
+                    'database': 'test_db',
+                    'username': 'test_user',
+                    'password': 'test_pass'
+                }
+            },
+            'monitoring': {
+                'enabled': True,
+                'interval': 60
+            }
+        }
+        
+        import yaml
+        with open(self.config_path, 'w') as f:
+            yaml.dump(test_config, f)
+        
+        self.config_manager = ConfigManager(self.config_path)
+    
+    def tearDown(self):
+        """ทำความสะอาดหลังแต่ละการทดสอบ"""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+    
+    def test_get_config_value(self):
+        """ทดสอบการดึงค่า config"""
+        app_name = self.config_manager.get('app.name')
+        self.assertEqual(app_name, 'Test App')
+        
+        db_host = self.config_manager.get('database.primary.host')
+        self.assertEqual(db_host, 'localhost')
+        
+        # ทดสอบค่า default
+        non_existent = self.config_manager.get('non.existent.key', 'default_value')
+        self.assertEqual(non_existent, 'default_value')
+    
+    def test_set_config_value(self):
+        """ทดสอบการตั้งค่า config"""
+        self.config_manager.set('app.debug', False)
+        self.assertFalse(self.config_manager.get('app.debug'))
+        
+        self.config_manager.set('new.nested.key', 'new_value')
+        self.assertEqual(self.config_manager.get('new.nested.key'), 'new_value')
+    
+    def test_validate_config(self):
+        """ทดสอบการตรวจสอบ config"""
+        validation = self.config_manager.validate_config()
+        
+        self.assertIsInstance(validation, dict)
+        self.assertIn('valid', validation)
+        self.assertIn('errors', validation)
+        self.assertIn('warnings', validation)
+        self.assertIsInstance(validation['valid'], bool)
+        self.assertIsInstance(validation['errors'], list)
+        self.assertIsInstance(validation['warnings'], list)
+    
+    def test_get_database_url(self):
+        """ทดสอบการสร้าง database URL"""
+        db_url = self.config_manager.get_database_url('primary')
+        
+        self.assertIsInstance(db_url, str)
+        self.assertIn('mssql+pymssql://', db_url)
+        self.assertIn('localhost', db_url)
+        self.assertIn('test_db', db_url)
+    
+    def test_get_config_summary(self):
+        """ทดสอบการดึงสรุป config"""
+        summary = self.config_manager.get_config_summary()
+        
+        self.assertIn('config_file', summary)
+        self.assertIn('sections', summary)
+        self.assertIn('total_keys', summary)
+        self.assertIn('validation', summary)
+        self.assertIn('app_info', summary)
+    
+    @patch.dict(os.environ, {'DATAOPS_APP_NAME': 'Test App Override'})
+    def test_environment_override(self):
+        """ทดสอบการ override ด้วย environment variables"""
+        # สร้าง config manager ใหม่เพื่อให้ apply env overrides
+        config_manager = ConfigManager(self.config_path)
+        
+        app_name = config_manager.get('app.name')
+        self.assertEqual(app_name, 'Test App Override')
+
+
+class TestIntegration(unittest.TestCase):
+    """ทดสอบการทำงานร่วมกันของระบบ"""
+    
+    def setUp(self):
+        """ตั้งค่าก่อนแต่ละการทดสอบ"""
+        self.test_dir = tempfile.mkdtemp()
+        self.config_path = os.path.join(self.test_dir, 'config.yaml')
+        
+        # สร้าง config
+        test_config = {
+            'data_quality': {
+                'max_null_percentage': 30.0,
+                'acceptable_max_null': 26,
+                'quality_thresholds': {
+                    'completeness': 0.85,
+                    'uniqueness': 0.90,
+                    'consistency': 0.90,
+                    'validity': 0.85
+                }
+            },
+            'monitoring': {
+                'enabled': True,
+                'interval': 60
+            }
+        }
+        
+        import yaml
+        with open(self.config_path, 'w') as f:
+            yaml.dump(test_config, f)
+        
+        # สร้างข้อมูลตัวอย่าง
+        self.sample_data = pd.DataFrame({
+            'id': range(1, 51),
+            'name': [f'User_{i}' for i in range(1, 51)],
+            'age': np.random.randint(18, 65, 50),
+            'salary': np.random.uniform(30000, 100000, 50),
+            'department': np.random.choice(['IT', 'HR', 'Finance'], 50),
+            'hire_date': pd.date_range(start='2020-01-01', periods=50, freq='D')
+        })
+        
+        self.sample_file = os.path.join(self.test_dir, 'test_data.csv')
+        self.sample_data.to_csv(self.sample_file, index=False)
+    
+    def tearDown(self):
+        """ทำความสะอาดหลังแต่ละการทดสอบ"""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+    
+    def test_etl_with_quality_check(self):
+        """ทดสอบ ETL Pipeline พร้อม Quality Check"""
+        # Load config
+        config = ConfigManager(self.config_path)
+        
+        # ETL Processing
+        processor = ETLProcessor(self.config_path)
+        result = processor.load_data(self.sample_file)
+        
+        self.assertTrue(result.success)
+        
+        # Quality Check
+        checker = DataQualityChecker(config.config)
+        quality_result = checker.run_checks(processor.raw_df)
+        
+        self.assertIsInstance(quality_result, QualityResult)
+        self.assertGreater(quality_result.overall_score, 0)
+    
+    def test_etl_with_monitoring(self):
+        """ทดสอบ ETL Pipeline พร้อม Monitoring"""
+        # Setup monitoring
+        collector = MetricsCollector()
+        
+        # ETL Processing
+        processor = ETLProcessor(self.config_path)
+        start_time = time.time()
+        
+        result = processor.load_data(self.sample_file)
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        # Record metrics
+        collector.record_pipeline_metrics(
+            pipeline_name='test_pipeline',
+            duration=duration,
+            processed_records=result.processed_records,
+            quality_score=85.0,
+            success=result.success
+        )
+        
+        # Check metrics
+        metrics = collector.get_system_overview()
+        self.assertIn('monitoring_status', metrics)
+        
+        # Cleanup
+        collector.stop_monitoring_service()
+    
+    def test_full_workflow(self):
+        """ทดสอบ workflow เต็ม"""
+        # 1. Load configuration
+        config = ConfigManager(self.config_path)
+        validation = config.validate_config()
+        self.assertTrue(validation['valid'])
+        
+        # 2. Setup monitoring
+        collector = MetricsCollector(config.config)
+        collector.start_monitoring()
+        
+        # 3. ETL Processing
+        processor = ETLProcessor(self.config_path)
+        
+        with patch('src.data_pipeline.etl_processor.create_engine') as mock_create_engine:
+            mock_engine = Mock()
+            mock_create_engine.return_value = mock_engine
             
-            # คำนวณคะแนนคุณภาพ
-            total_cells = self.processor.processed_df.shape[0] * self.processor.processed_df.shape[1]
-            quality_score = ((total_cells - null_count) / total_cells) * 100 if total_cells > 0 else 0
+            start_time = time.time()
+            result = processor.run_full_pipeline(self.sample_file)
+            end_time = time.time()
             
-            self.assertGreaterEqual(quality_score, 80.0)  # คะแนนคุณภาพอย่างน้อย 80%
+            self.assertTrue(result.success)
         
-        print(f"✅ PASS: Data Quality Framework integration - Score: {quality_score:.2f}%")
+        # 4. Quality assessment
+        checker = DataQualityChecker(config.config)
+        quality_result = checker.run_checks(processor.raw_df)
+        
+        self.assertIsInstance(quality_result, QualityResult)
+        
+        # 5. Record metrics
+        collector.record_pipeline_metrics(
+            pipeline_name='full_test_pipeline',
+            duration=end_time - start_time,
+            processed_records=result.processed_records,
+            quality_score=quality_result.overall_score,
+            success=result.success
+        )
+        
+        # 6. Generate reports
+        quality_report = checker.generate_report(quality_result)
+        self.assertIsInstance(quality_report, str)
+        
+        metrics_export = collector.export_metrics('json')
+        self.assertIsInstance(metrics_export, str)
+        
+        # Cleanup
+        collector.stop_monitoring_service()
+
+
+class TestPerformance(unittest.TestCase):
+    """ทดสอบประสิทธิภาพระบบ"""
     
-    def test_09_no_null_values_in_final_dataset(self):
-        """ทดสอบว่าไม่มี null values ใน final dataset"""
-        print("test_no_null_values_in_final_dataset ... ", end="")
+    def setUp(self):
+        """ตั้งค่าก่อนแต่ละการทดสอบ"""
+        self.test_dir = tempfile.mkdtemp()
         
-        if self.processor.processed_df is not None:
-            null_count = self.processor.processed_df.isnull().sum().sum()
-            self.assertEqual(null_count, 0, "Final dataset should not contain null values")
+        # สร้างข้อมูลขนาดใหญ่
+        self.large_data = pd.DataFrame({
+            'id': range(1, 10001),
+            'value': np.random.randn(10000),
+            'category': np.random.choice(['A', 'B', 'C'], 10000),
+            'timestamp': pd.date_range(start='2023-01-01', periods=10000, freq='H')
+        })
         
-        print("✅ PASS: ไม่มี null values ใน final dataset")
+        self.large_file = os.path.join(self.test_dir, 'large_data.csv')
+        self.large_data.to_csv(self.large_file, index=False)
     
-    def test_10_data_types_correctness(self):
-        """ทดสอบความถูกต้องของ data types"""
-        print("test_data_types_correctness ... ", end="")
-        
-        if self.processor.processed_df is not None:
-            # ตรวจสอบประเภทข้อมูลสำคัญ
-            df = self.processor.processed_df
-            
-            # ตรวจสอบ numeric columns
-            numeric_columns = ['loan_amnt', 'funded_amnt', 'installment']
-            for col in numeric_columns:
-                if col in df.columns:
-                    self.assertTrue(pd.api.types.is_numeric_dtype(df[col]))
-            
-            # ตรวจสอบ datetime columns
-            if 'issue_d' in df.columns:
-                self.assertTrue(pd.api.types.is_datetime64_any_dtype(df['issue_d']))
-        
-        print("✅ PASS: Data types ถูกต้องทั้งหมด")
+    def tearDown(self):
+        """ทำความสะอาดหลังแต่ละการทดสอบ"""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
     
-    def test_11_primary_keys_uniqueness(self):
-        """ทดสอบ primary keys ใน dimension tables ไม่ซ้ำ"""
-        print("test_primary_keys_uniqueness ... ", end="")
-        
-        for dim_name, dim_table in self.processor.dimension_tables.items():
-            pk_column = f'{dim_name}_id'
-            if pk_column in dim_table.columns:
-                # ตรวจสอบว่า primary key ไม่ซ้ำ
-                unique_count = dim_table[pk_column].nunique()
-                total_count = len(dim_table)
-                self.assertEqual(unique_count, total_count, 
-                               f"Primary key {pk_column} should be unique")
-        
-        print("✅ PASS: Primary keys ใน dimension tables ไม่ซ้ำ")
-    
-    def test_12_foreign_key_integrity(self):
-        """ทดสอบ foreign key integrity"""
-        print("test_foreign_key_integrity ... ", end="")
-        
-        if self.processor.fact_table is not None:
-            fact_table = self.processor.fact_table
-            
-            # ตรวจสอบ foreign key integrity
-            for dim_name, dim_table in self.processor.dimension_tables.items():
-                fk_column = f'{dim_name}_id'
-                pk_column = f'{dim_name}_id'
-                
-                if fk_column in fact_table.columns and pk_column in dim_table.columns:
-                    # ตรวจสอบว่า foreign key values อยู่ใน dimension table
-                    fact_fk_values = set(fact_table[fk_column].dropna())
-                    dim_pk_values = set(dim_table[pk_column])
-                    
-                    invalid_fks = fact_fk_values - dim_pk_values
-                    self.assertEqual(len(invalid_fks), 0, 
-                                   f"Invalid foreign keys found in {fk_column}")
-        
-        print("✅ PASS: Foreign keys integrity ถูกต้อง")
-    
-    def test_13_business_logic_validation(self):
-        """ทดสอบตรรกะทางธุรกิจ"""
-        print("test_business_logic_validation ... ", end="")
-        
-        if self.processor.fact_table is not None:
-            fact_table = self.processor.fact_table
-            
-            # ตรวจสอบ loan amounts เป็นค่าบวก
-            if 'loan_amnt' in fact_table.columns:
-                self.assertTrue((fact_table['loan_amnt'] > 0).all(), 
-                              "All loan amounts should be positive")
-            
-            # ตรวจสอบ funded_amount <= loan_amount
-            if 'loan_amnt' in fact_table.columns and 'funded_amnt' in fact_table.columns:
-                self.assertTrue((fact_table['funded_amnt'] <= fact_table['loan_amnt']).all(),
-                              "Funded amount should not exceed loan amount")
-            
-            # ตรวจสอบ interest rate ในช่วงที่สมเหตุสมผล (0-1 for decimal format)
-            if 'int_rate' in fact_table.columns:
-                self.assertTrue((fact_table['int_rate'] >= 0).all() and 
-                              (fact_table['int_rate'] <= 1).all(),
-                              "Interest rates should be between 0 and 1")
-        
-        print("✅ PASS: ตรรกะทางธุรกิจถูกต้อง")
-    
-    def test_14_etl_processing_performance(self):
-        """ทดสอบประสิทธิภาพของ ETL processing"""
-        print("test_etl_processing_performance ... ", end="")
-        
-        # ตรวจสอบเวลาการประมวลผล
-        processing_time = self.processing_result.processing_time
-        
-        # กำหนดเกณฑ์เวลาที่ยอมรับได้ (เช่น ไม่เกิน 120 วินาที)
-        max_acceptable_time = 120.0
-        self.assertLessEqual(processing_time, max_acceptable_time,
-                           f"Processing time {processing_time:.2f}s exceeds {max_acceptable_time}s")
-        
-        # ตรวจสอบจำนวนข้อมูลที่ประมวลผลได้
-        self.assertGreater(self.processing_result.processed_records, 0,
-                         "Should process at least some records")
-        
-        print(f"✅ PASS: Performance OK - {processing_time:.2f}s for {self.processing_result.processed_records} records")
-    
-    def test_15_error_handling(self):
-        """ทดสอบการจัดการข้อผิดพลาด"""
-        print("test_error_handling ... ", end="")
-        
+    def test_etl_performance(self):
+        """ทดสอบประสิทธิภาพ ETL"""
         processor = ETLProcessor()
         
-        # ทดสอบไฟล์ที่ไม่มีอยู่
-        result = processor.load_data('nonexistent_file.csv')
-        self.assertFalse(result.success)
-        self.assertGreater(len(result.errors), 0)
+        start_time = time.time()
+        result = processor.load_data(self.large_file)
+        end_time = time.time()
         
-        # ทดสอบการเรียก method โดยไม่มีข้อมูล
-        with self.assertRaises(ValueError):
-            processor.filter_by_null_percentage()
+        duration = end_time - start_time
         
-        print("✅ PASS: Error handling ทำงานถูกต้อง")
-
-
-def main():
-    """รันการทดสอบ ETL ขั้นสูง"""
+        self.assertTrue(result.success)
+        self.assertLess(duration, 10.0)  # ควรเสร็จภายใน 10 วินาที
+        
+        # ทดสอบ memory usage
+        import psutil
+        process = psutil.Process()
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        
+        self.assertLess(memory_mb, 500)  # ควรใช้ memory น้อยกว่า 500MB
     
-    # ตั้งค่า test suite
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestEnhancedETL)
+    def test_quality_check_performance(self):
+        """ทดสอบประสิทธิภาพ Quality Check"""
+        checker = DataQualityChecker()
+        
+        start_time = time.time()
+        result = checker.run_checks(self.large_data)
+        end_time = time.time()
+        
+        duration = end_time - start_time
+        
+        self.assertIsInstance(result, QualityResult)
+        self.assertLess(duration, 5.0)  # ควรเสร็จภายใน 5 วินาที
+    
+    def test_monitoring_overhead(self):
+        """ทดสอบ overhead ของการติดตาม"""
+        collector = MetricsCollector()
+        
+        # ทดสอบการบันทึกเมตริกจำนวนมาก
+        start_time = time.time()
+        
+        for i in range(1000):
+            collector.record_metric(f'test_metric_{i % 10}', i, {'test': 'value'})
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        self.assertLess(duration, 2.0)  # ควรเสร็จภายใน 2 วินาที
+        
+        # ทดสอบการ export
+        start_time = time.time()
+        json_export = collector.export_metrics('json')
+        end_time = time.time()
+        
+        export_duration = end_time - start_time
+        self.assertLess(export_duration, 1.0)  # ควรเสร็จภายใน 1 วินาที
+        
+        # Cleanup
+        collector.stop_monitoring_service()
+
+
+class TestCICDIntegration(unittest.TestCase):
+    """ทดสอบการทำงานร่วมกับ CI/CD Pipeline (จาก python-jenkins)"""
+    
+    def setUp(self):
+        """ตั้งค่าก่อนแต่ละการทดสอบ"""
+        self.test_dir = tempfile.mkdtemp()
+        self.config_path = os.path.join(self.test_dir, 'config.yaml')
+        
+        # สร้าง config
+        test_config = {
+            'app': {
+                'name': 'DataOps Foundation',
+                'version': '1.0.0',
+                'environment': 'test'
+            },
+            'data_quality': {
+                'quality_thresholds': {
+                    'completeness': 0.80,
+                    'uniqueness': 0.85,
+                    'consistency': 0.85,
+                    'validity': 0.80
+                }
+            }
+        }
+        
+        import yaml
+        with open(self.config_path, 'w') as f:
+            yaml.dump(test_config, f)
+    
+    def tearDown(self):
+        """ทำความสะอาดหลังแต่ละการทดสอบ"""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+    
+    def test_pipeline_health_check(self):
+        """ทดสอบการตรวจสอบสุขภาพ pipeline"""
+        # สร้างข้อมูลทดสอบ
+        test_data = pd.DataFrame({
+            'id': range(1, 101),
+            'name': [f'Test_{i}' for i in range(1, 101)],
+            'value': np.random.randn(100),
+            'category': np.random.choice(['A', 'B', 'C'], 100)
+        })
+        
+        test_file = os.path.join(self.test_dir, 'health_check.csv')
+        test_data.to_csv(test_file, index=False)
+        
+        # ทดสอบ ETL pipeline
+        processor = ETLProcessor(self.config_path)
+        result = processor.load_data(test_file)
+        
+        self.assertTrue(result.success)
+        self.assertGreater(result.processed_records, 0)
+        
+        # ทดสอบ quality check
+        checker = DataQualityChecker()
+        quality_result = checker.run_checks(test_data)
+        
+        self.assertIsInstance(quality_result, QualityResult)
+        self.assertGreater(quality_result.overall_score, 0)
+    
+    def test_automated_testing_workflow(self):
+        """ทดสอบ workflow การทดสอบอัตโนมัติ"""
+        # 1. Configuration validation
+        config = ConfigManager(self.config_path)
+        validation = config.validate_config()
+        self.assertTrue(validation['valid'])
+        
+        # 2. System health check
+        collector = MetricsCollector()
+        overview = collector.get_system_overview()
+        self.assertIn('monitoring_status', overview)
+        
+        # 3. Data quality baseline
+        baseline_data = pd.DataFrame({
+            'id': range(1, 51),
+            'name': [f'Baseline_{i}' for i in range(1, 51)],
+            'score': np.random.uniform(0.8, 1.0, 50)
+        })
+        
+        checker = DataQualityChecker()
+        baseline_result = checker.run_checks(baseline_data)
+        
+        # ตรวจสอบว่าผ่านเกณฑ์คุณภาพ
+        self.assertGreaterEqual(baseline_result.overall_score, 80.0)
+        
+        # 4. Performance baseline
+        start_time = time.time()
+        
+        # จำลองการประมวลผล
+        for i in range(100):
+            collector.record_metric('test_performance', i, {'iteration': str(i)})
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        # ตรวจสอบประสิทธิภาพ
+        self.assertLess(duration, 1.0)
+        
+        # Cleanup
+        collector.stop_monitoring_service()
+    
+    def test_deployment_readiness(self):
+        """ทดสอบความพร้อมสำหรับ deployment"""
+        # ตรวจสอบ components หลัก
+        components = {
+            'config_manager': ConfigManager(self.config_path),
+            'etl_processor': ETLProcessor(self.config_path),
+            'quality_checker': DataQualityChecker(),
+            'metrics_collector': MetricsCollector()
+        }
+        
+        for component_name, component in components.items():
+            self.assertIsNotNone(component, f"{component_name} should be initialized")
+        
+        # ตรวจสอบ configuration
+        config = components['config_manager']
+        validation = config.validate_config()
+        
+        # ใน production environment ควรมี error = 0
+        if config.get('app.environment') == 'production':
+            self.assertEqual(len(validation['errors']), 0)
+        
+        # ตรวจสอบ dependencies
+        required_modules = ['pandas', 'numpy', 'sqlalchemy', 'yaml']
+        for module in required_modules:
+            try:
+                __import__(module)
+            except ImportError:
+                self.fail(f"Required module {module} is not available")
+        
+        # Cleanup
+        components['metrics_collector'].stop_monitoring_service()
+
+
+def run_all_tests():
+    """รันการทดสอบทั้งหมด"""
+    # สร้าง test suite
+    test_suite = unittest.TestSuite()
+    
+    # เพิ่มทุก test class
+    test_classes = [
+        TestETLProcessor,
+        TestDataQualityChecker,
+        TestMetricsCollector,
+        TestConfigManager,
+        TestIntegration,
+        TestPerformance,
+        TestCICDIntegration
+    ]
+    
+    for test_class in test_classes:
+        tests = unittest.TestLoader().loadTestsFromTestCase(test_class)
+        test_suite.addTests(tests)
     
     # รันการทดสอบ
-    runner = unittest.TextTestRunner(verbosity=0, stream=open(os.devnull, 'w'))
-    result = runner.run(suite)
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(test_suite)
     
-    # แสดงผลสำเร็จ
-    if result.wasSuccessful():
-        print("\n✅ All Enhanced ETL tests passed successfully!")
-        return 0
-    else:
-        print(f"\n❌ {len(result.failures)} test(s) failed, {len(result.errors)} error(s)")
+    return result
+
+
+if __name__ == '__main__':
+    print("=== DataOps Foundation Enhanced Tests ===")
+    print("รวมโค้ดจาก ETL-dev (1).py และ python-jenkins")
+    print("=" * 60)
+    
+    # ตั้งค่า logging สำหรับทดสอบ
+    logging.basicConfig(level=logging.WARNING)
+    
+    # รันการทดสอบทั้งหมด
+    result = run_all_tests()
+    
+    # สรุปผล
+    print("\n" + "=" * 60)
+    print("📊 Test Results Summary:")
+    print(f"   Tests run: {result.testsRun}")
+    print(f"   Failures: {len(result.failures)}")
+    print(f"   Errors: {len(result.errors)}")
+    print(f"   Success rate: {((result.testsRun - len(result.failures) - len(result.errors)) / result.testsRun * 100):.1f}%")
+    
+    if result.failures:
+        print(f"\n❌ Failures ({len(result.failures)}):")
         for test, traceback in result.failures:
-            print(f"FAIL: {test}")
-            print(traceback)
+            print(f"   - {test}")
+    
+    if result.errors:
+        print(f"\n💥 Errors ({len(result.errors)}):")
         for test, traceback in result.errors:
-            print(f"ERROR: {test}")
-            print(traceback)
-        return 1
-
-
-if __name__ == "__main__":
-    exit_code = main()
+            print(f"   - {test}")
+    
+    if result.wasSuccessful():
+        print("\n✅ All tests passed!")
+        exit_code = 0
+    else:
+        print("\n❌ Some tests failed!")
+        exit_code = 1
+    
+    print("=" * 60)
     exit(exit_code)

@@ -1,0 +1,289 @@
+# Jenkins Configuration as Code (JCasC)
+# ไฟล์นี้จะกำหนดค่า Jenkins อัตโนมัติเมื่อเริ่มต้น container
+
+jenkins:
+  systemMessage: |
+    🚀 DataOps Foundation Jenkins Instance
+    
+    This Jenkins instance is configured for DataOps Foundation project.
+    
+    Features:
+    - Python 3.11+ ETL processing
+    - Automated testing pipeline  
+    - Docker containerization
+    - Data quality monitoring
+    - GitHub integration
+    
+    📚 Documentation: https://github.com/amornpan/dataops-foundation
+    
+  numExecutors: 4
+  scmCheckoutRetryCount: 3
+  mode: NORMAL
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          name: "DataOps Administrator"
+          password: "${JENKINS_ADMIN_PASSWORD:-DataOps123!}"
+          properties:
+            - "hudson.tasks.Mailer$UserProperty":
+                emailAddress: "admin@dataops-foundation.local"
+            - "hudson.model.PaneStatusProperties":
+                collapsed: false
+
+  authorizationStrategy:
+    globalMatrix:
+      permissions:
+        - "Overall/Administer:admin"
+        - "Overall/Read:authenticated"
+        - "Job/Build:authenticated"
+        - "Job/Cancel:authenticated"
+        - "Job/Read:authenticated"
+        - "Job/Workspace:authenticated"
+        - "Run/Replay:authenticated"
+        - "Run/Update:authenticated"
+        - "View/Configure:authenticated"
+        - "View/Create:authenticated"
+        - "View/Delete:authenticated"
+        - "View/Read:authenticated"
+
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "PYTHON_PATH"
+            value: "/usr/bin/python3"
+          - key: "PIP_PATH" 
+            value: "/usr/bin/pip3"
+          - key: "DATAOPS_ENV"
+            value: "jenkins"
+          - key: "TZ"
+            value: "Asia/Bangkok"
+
+# Tool Configuration
+tool:
+  git:
+    installations:
+      - name: "Default"
+        home: "/usr/bin/git"
+
+# Global Pipeline Libraries
+unclassified:
+  globalLibraries:
+    libraries:
+      - name: "dataops-foundation-shared"
+        defaultVersion: "main"
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "https://github.com/amornpan/dataops-foundation.git"
+                credentialsId: "github-credentials"
+
+  # GitHub Plugin Configuration
+  gitHubPluginConfig:
+    hookUrl: "${JENKINS_URL}github-webhook/"
+    
+  # Email Configuration
+  mailer:
+    adminAddress: "admin@dataops-foundation.local"
+    charset: "UTF-8"
+    defaultSuffix: "@dataops-foundation.local"
+    smtpHost: "${SMTP_HOST:-smtp.gmail.com}"
+    smtpPort: "${SMTP_PORT:-587}"
+    useSsl: false
+    useTls: true
+    authentication:
+      username: "${SMTP_USERNAME}"
+      password: "${SMTP_PASSWORD}"
+
+  # Extended Email Configuration  
+  extendedEmailPublisher:
+    adminRequiredForTemplateTesting: false
+    allowUnregisteredEnabled: false
+    charset: "UTF-8"
+    debugMode: false
+    defaultBody: |
+      $PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS:
+      
+      Check console output at $BUILD_URL to view the results.
+      
+      Build Summary:
+      - Duration: $BUILD_DURATION
+      - Result: $BUILD_STATUS
+      - Changes: $CHANGES_SINCE_LAST_SUCCESS
+      
+    defaultSubject: "$PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS!"
+    defaultTriggerIds:
+      - "hudson.plugins.emailext.plugins.trigger.FailureTrigger"
+      - "hudson.plugins.emailext.plugins.trigger.SuccessTrigger"
+    maxAttachmentSize: -1
+    maxAttachmentSizeMb: 10
+    precedenceBulk: false
+    watchingEnabled: false
+
+  # Prometheus Metrics
+  prometheusConfiguration:
+    collectingMetrics: true
+    defaultNamespace: "jenkins"
+    path: "/prometheus"
+    useAuthenticatedEndpoint: false
+
+# Security Configuration
+security:
+  queueItemAuthenticator:
+    authenticators:
+      - global:
+          strategy: "triggeringUsersAuthorizationStrategy"
+
+  sSHD:
+    port: -1
+
+# Appearance
+appearance:
+  themeManager:
+    disableUserThemes: false
+    theme: "default"
+
+# Location Configuration  
+jenkins:
+  location:
+    adminAddress: "admin@dataops-foundation.local"
+    url: "${JENKINS_URL:-http://localhost:8081/}"
+
+# Credentials (will be populated via environment variables)
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: "github-credentials"
+              username: "${GITHUB_USERNAME}"
+              password: "${GITHUB_TOKEN}"
+              description: "GitHub Access Token for DataOps Foundation"
+              
+          - usernamePassword:
+              scope: GLOBAL  
+              id: "mssql-credentials"
+              username: "${DB_USERNAME:-sa}"
+              password: "${DB_PASSWORD:-DataOps123!}"
+              description: "MSSQL Database Credentials"
+              
+          - usernamePassword:
+              scope: GLOBAL
+              id: "dockerhub-credentials" 
+              username: "${DOCKERHUB_USERNAME}"
+              password: "${DOCKERHUB_TOKEN}"
+              description: "Docker Hub Registry Access"
+
+# Job Configuration
+jobs:
+  - script: |
+      folder('DataOps Foundation') {
+        description('DataOps Foundation Pipeline Jobs')
+      }
+      
+  - script: |
+      pipelineJob('DataOps Foundation/dataops-foundation-pipeline') {
+        description('Main ETL Pipeline for DataOps Foundation')
+        
+        properties {
+          githubProjectUrl('https://github.com/amornpan/dataops-foundation/')
+        }
+        
+        triggers {
+          githubPush()
+          pollSCM {
+            scmpoll_spec('H/5 * * * *')
+          }
+        }
+        
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/amornpan/dataops-foundation.git')
+                  credentials('github-credentials')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('jenkins/Jenkinsfile')
+          }
+        }
+        
+        logRotator {
+          numToKeep(10)
+          daysToKeep(30)
+        }
+      }
+
+  - script: |
+      pipelineJob('DataOps Foundation/dataops-quality-check') {
+        description('Data Quality Check Pipeline')
+        
+        triggers {
+          cron('H 2 * * *') // รันทุกวันเวลา 02:00
+        }
+        
+        definition {
+          cps {
+            script('''
+              pipeline {
+                agent any
+                stages {
+                  stage('Data Quality Check') {
+                    steps {
+                      script {
+                        sh '''
+                          python main.py --mode quality --input examples/sample_data/large_sample.csv
+                        '''
+                      }
+                    }
+                  }
+                }
+              }
+            ''')
+          }
+        }
+      }
+
+  - script: |
+      pipelineJob('DataOps Foundation/nightly-build') {
+        description('Nightly Build and Test Pipeline')
+        
+        triggers {
+          cron('H 0 * * *') // รันทุกวันเที่ยงคืน
+        }
+        
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/amornpan/dataops-foundation.git')
+                  credentials('github-credentials')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('jenkins/Jenkinsfile')
+          }
+        }
+        
+        parameters {
+          booleanParam {
+            name('FULL_TEST_SUITE')
+            defaultValue(true)
+            description('Run full test suite including performance tests')
+          }
+          stringParam {
+            name('TEST_DATA_SIZE')
+            defaultValue('10000')
+            description('Number of records for test data generation')
+          }
+        }
+      }

@@ -1,0 +1,71 @@
+# Required Jenkins Plugins for DataOps Foundation
+
+# Pipeline Plugins
+pipeline-stage-view:latest
+blueocean:latest
+pipeline-utility-steps:latest
+pipeline-github-lib:latest
+
+# Source Control Management
+git:latest
+github:latest
+github-branch-source:latest
+github-pullrequest:latest
+
+# Build & Test Tools
+build-timeout:latest
+timestamper:latest
+ws-cleanup:latest
+junit:latest
+htmlpublisher:latest
+test-results-analyzer:latest
+
+# Code Quality & Security
+warnings-ng:latest
+code-coverage-api:latest
+sonar:latest
+checkstyle:latest
+
+# Docker Integration
+docker-plugin:latest
+docker-workflow:latest
+docker-build-publish:latest
+
+# Notifications
+email-ext:latest
+slack:latest
+mailer:latest
+
+# Monitoring & Metrics
+prometheus:latest
+monitoring:latest
+build-monitor-plugin:latest
+
+# Utility Plugins
+credentials:latest
+credentials-binding:latest
+plain-credentials:latest
+ssh-credentials:latest
+workflow-aggregator:latest
+workflow-job:latest
+workflow-cps:latest
+
+# Security
+authorize-project:latest
+role-strategy:latest
+matrix-auth:latest
+
+# File Management
+copyartifact:latest
+publish-over-ssh:latest
+config-file-provider:latest
+
+# Environment Management
+build-user-vars-plugin:latest
+environment-script:latest
+parameterized-trigger:latest
+
+# UI Enhancements
+dashboard-view:latest
+build-pipeline-plugin:latest
+delivery-pipeline-plugin:latest

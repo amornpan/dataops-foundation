@@ -1,59 +1,61 @@
-# DataOps Foundation Main Application Dockerfile
+# DataOps Foundation - Production Docker Image
 FROM python:3.11-slim
+
+# Set metadata
+LABEL maintainer="DataOps Foundation Team <dataops@company.com>"
+LABEL description="Enterprise DataOps platform for modern data engineering"
+LABEL version="1.0.0"
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
+ENV DATAOPS_CONFIG_PATH=/app/config/config.yaml
+ENV DATAOPS_LOG_LEVEL=INFO
+
+# Create app user (security best practice)
+RUN groupadd -r dataops && useradd -r -g dataops dataops
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    unixodbc-dev \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    unixodbc-dev \
-    curl \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Microsoft ODBC Driver for SQL Server
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first for better caching
+# Copy requirements first (for better Docker layer caching)
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
 COPY config/ ./config/
-COPY tests/ ./tests/
-COPY README.md .
-COPY setup.py .
+COPY main.py .
+COPY examples/ ./examples/
 
 # Create necessary directories
-RUN mkdir -p data logs temp output
+RUN mkdir -p /app/logs /app/data /app/temp /app/backup
 
-# Set environment variables
-ENV PYTHONPATH=/app/src
-ENV DATAOPS_ENV=production
-ENV DATAOPS_LOG_LEVEL=INFO
+# Set proper permissions
+RUN chown -R dataops:dataops /app
 
-# Create non-root user
-RUN useradd -m -u 1001 dataops \
-    && chown -R dataops:dataops /app
-
+# Switch to non-root user
 USER dataops
 
-# Expose port
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.path.insert(0, '/app/src'); from src.utils.config_manager import ConfigManager; config = ConfigManager(); print('healthy' if config.validate_config()['valid'] else exit(1))"
+
+# Expose port (if web interface is added later)
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8080/health')" || exit 1
-
 # Default command
-CMD ["python", "src/data_pipeline/etl_processor.py"]
+CMD ["python", "main.py", "--mode", "info"]

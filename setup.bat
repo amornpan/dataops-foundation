@@ -1,117 +1,73 @@
 @echo off
-REM DataOps Foundation - Quick Setup Script (Windows)
+REM DataOps Foundation Setup Script for Windows
+echo ========================================
+echo   DataOps Foundation Setup (Windows)
+echo ========================================
 
-echo 🚀 DataOps Foundation - Quick Setup
-echo ====================================
-
-REM Check if Python is installed
-echo [INFO] Checking Python installation...
+echo.
+echo [1/7] Checking Python installation...
 python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Python is not installed. Please install Python 3.9 or higher.
+if errorlevel 1 (
+    echo ERROR: Python is not installed or not in PATH
+    echo Please install Python 3.9+ from https://python.org
     pause
     exit /b 1
 )
+python --version
 
-for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYTHON_VERSION=%%v
-echo [SUCCESS] Python %PYTHON_VERSION% found
-
-REM Create virtual environment
-echo [INFO] Creating virtual environment...
+echo.
+echo [2/7] Creating virtual environment...
 if exist venv (
-    echo [WARNING] Virtual environment already exists
+    echo Virtual environment already exists
 ) else (
     python -m venv venv
-    echo [SUCCESS] Virtual environment created
-)
-
-REM Activate virtual environment
-echo [INFO] Activating virtual environment...
-call venv\Scripts\activate
-echo [SUCCESS] Virtual environment activated
-
-REM Upgrade pip
-echo [INFO] Upgrading pip...
-pip install --upgrade pip
-
-REM Install requirements
-echo [INFO] Installing Python dependencies...
-if exist requirements.txt (
-    pip install -r requirements.txt
-    echo [SUCCESS] Dependencies installed successfully
-) else (
-    echo [ERROR] requirements.txt not found
-    pause
-    exit /b 1
-)
-
-REM Create necessary directories
-echo [INFO] Creating necessary directories...
-if not exist data mkdir data
-if not exist logs mkdir logs
-if not exist temp mkdir temp
-if not exist output mkdir output
-if not exist examples\sample_data mkdir examples\sample_data
-echo [SUCCESS] Directories created
-
-REM Generate sample data
-echo [INFO] Generating sample data...
-if exist examples\generate_sample_data.py (
-    python examples\generate_sample_data.py
-    echo [SUCCESS] Sample data generated
-) else (
-    echo [WARNING] Sample data generator not found
-)
-
-REM Run tests
-echo [INFO] Running tests...
-if exist tests\test_enhanced_etl.py (
-    python tests\test_enhanced_etl.py
-    if %errorlevel% equ 0 (
-        echo [SUCCESS] All tests passed!
-    ) else (
-        echo [WARNING] Some tests failed. Check the output above.
-    )
-) else (
-    echo [WARNING] Test file not found
-)
-
-REM Check if Docker is available
-echo [INFO] Checking Docker availability...
-docker --version >nul 2>&1
-if %errorlevel% equ 0 (
-    docker-compose --version >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo [SUCCESS] Docker and Docker Compose are available
-        echo.
-        echo 🐳 To start with Docker:
-        echo    docker-compose -f docker/docker-compose.yml up -d
-    ) else (
-        echo [WARNING] Docker is available but Docker Compose is not installed
-    )
-) else (
-    echo [WARNING] Docker is not installed. Container features will not be available.
+    echo Virtual environment created
 )
 
 echo.
-echo 🎉 Setup completed successfully!
+echo [3/7] Activating virtual environment and upgrading pip...
+call venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+
 echo.
-echo 📋 Quick Start Commands:
-echo    # Activate virtual environment
-echo    venv\Scripts\activate
+echo [4/7] Installing dependencies...
+pip install -r requirements.txt
+
 echo.
-echo    # Run ETL processor
-echo    python src\data_pipeline\etl_processor.py
+echo [5/7] Creating necessary directories...
+if not exist "data" mkdir data
+if not exist "temp" mkdir temp
+if not exist "logs" mkdir logs
+if not exist "backup" mkdir backup
+if not exist "examples\sample_data" mkdir examples\sample_data
+
 echo.
-echo    # Run data quality checker
-echo    python src\data_quality\quality_checker.py
+echo [6/7] Running quick tests...
+python test_quick.py
+
 echo.
-echo    # Run full test suite
-echo    python tests\test_enhanced_etl.py
+echo [7/7] Setup completed!
 echo.
-echo 📚 Documentation:
-echo    - Quick Start: docs\quick-start.md
-echo    - README: README.md
+echo ========================================
+echo   Setup Complete! Next Steps:
+echo ========================================
 echo.
-echo Happy DataOps! 🚀
+echo 1. Activate virtual environment:
+echo    venv\Scripts\activate.bat
+echo.
+echo 2. Check system status:
+echo    python main.py --mode info
+echo.
+echo 3. Generate sample data:
+echo    python main.py --mode generate-data --records 1000
+echo.
+echo 4. Run ETL pipeline:
+echo    python main.py --mode etl --input examples\sample_data\generated_data.csv
+echo.
+echo 5. Check data quality:
+echo    python main.py --mode quality --input examples\sample_data\generated_data.csv
+echo.
+echo For more information, see README.md
+echo ========================================
+
 pause

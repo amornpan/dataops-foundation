@@ -1,7 +1,19 @@
-# DataOps Foundation Configuration
-# การตั้งค่าหลักสำหรับ ETL Pipeline และ Data Quality
+app:
+  name: "DataOps Foundation"
+  version: "1.0.0"
+  environment: "development"
+  debug: false
+  description: "Enterprise DataOps platform for modern data engineering"
 
-# ===== การตั้งค่าฐานข้อมูล =====
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/dataops.log"
+  error_file: "logs/error.log"
+  json_format: false
+  max_size: "10MB"
+  backup_count: 5
+
 database:
   primary:
     type: "mssql"
@@ -12,225 +24,202 @@ database:
     password: "Passw0rd123456"
     connection_timeout: 30
     command_timeout: 300
+    pool_size: 10
+    max_overflow: 20
     
-  # ฐานข้อมูลสำรอง (หากต้องการ)
   secondary:
     type: "postgresql"
     host: "localhost"
     port: 5432
-    database: "dataops_backup"
+    database: "dataops_staging"
     username: "postgres"
-    password: "postgres"
+    password: "changeme"
+    connection_timeout: 30
 
-# ===== การตั้งค่าคุณภาพข้อมูล =====
 data_quality:
-  # เกณฑ์การกรองคอลัมน์ที่มี null values เยอะ
   max_null_percentage: 30.0
-  
-  # จำนวน null values สูงสุดที่ยอมรับได้ในแต่ละแถว
   acceptable_max_null: 26
+  quality_thresholds:
+    completeness: 0.85
+    uniqueness: 0.90
+    consistency: 0.90
+    validity: 0.85
+    accuracy: 0.80
+    timeliness: 0.85
   
-  # คะแนนคุณภาพข้อมูลขั้นต่ำ
-  quality_threshold: 80.0
-  
-  # การตรวจสอบ business rules
   validation_rules:
-    - name: "positive_loan_amount"
-      description: "Loan amount must be positive"
-      column: "loan_amnt"
-      condition: "> 0"
-      severity: "error"
-      
-    - name: "funded_not_exceed_loan"
-      description: "Funded amount should not exceed loan amount"
-      columns: ["funded_amnt", "loan_amnt"]
-      condition: "funded_amnt <= loan_amnt"
-      severity: "warning"
-      
-    - name: "interest_rate_range"
-      description: "Interest rate should be between 0 and 100%"
-      column: "int_rate"
-      condition: "BETWEEN 0 AND 1"
-      severity: "error"
-
-# ===== การตั้งค่าการประมวลผล =====
-processing:
-  # ขนาด batch สำหรับการประมวลผล
-  batch_size: 1000
-  
-  # จำนวน worker threads
-  max_workers: 4
-  
-  # เปิดใช้งานการประมวลผลแบบ parallel
-  enable_parallel: true
-  
-  # timeout สำหรับการประมวลผล (วินาที)
-  processing_timeout: 3600
-  
-  # จำนวนครั้งสูงสุดในการ retry หากเกิดข้อผิดพลาด
-  max_retries: 3
-  
-  # เวลารอระหว่าง retry (วินาที)
-  retry_delay: 5
-
-# ===== การตั้งค่าการ Logging =====
-logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  
-  # การบันทึก log ลงไฟล์
-  file:
-    enabled: true
-    path: "logs/dataops.log"
-    max_size: "10MB"
-    backup_count: 5
+    email_format: true
+    phone_format: true
+    date_range_check: true
+    numeric_range_check: true
     
-  # การส่ง log ไปยัง external systems
-  external:
-    elasticsearch:
-      enabled: false
-      host: "localhost"
-      port: 9200
-      index: "dataops-logs"
+  profiling:
+    enabled: true
+    sample_size: 10000
+    include_correlations: true
 
-# ===== การตั้งค่า Monitoring =====
 monitoring:
-  # เปิดใช้งาน metrics collection
   enabled: true
+  interval: 60
+  metrics_retention_days: 30
   
-  # Prometheus metrics
-  prometheus:
+  thresholds:
+    cpu_usage:
+      max: 80.0
+      severity: "medium"
+    memory_usage:
+      max: 85.0
+      severity: "medium"
+    disk_usage:
+      max: 90.0
+      severity: "high"
+    pipeline_duration:
+      max: 3600.0
+      severity: "medium"
+    data_quality_score:
+      min: 80.0
+      severity: "high"
+    error_rate:
+      max: 0.05
+      severity: "high"
+      
+  alerts:
     enabled: true
-    port: 8000
-    path: "/metrics"
+    channels: ["log", "email"]
+    cooldown_minutes: 15
     
-  # การแจ้งเตือน
-  alerting:
-    enabled: true
     email:
+      enabled: false
       smtp_server: "smtp.gmail.com"
       smtp_port: 587
+      use_tls: true
       username: "alerts@company.com"
-      password: "password"
-      recipients:
-        - "dataops-team@company.com"
-        - "admin@company.com"
-    
-    # เกณฑ์การแจ้งเตือน
-    thresholds:
-      error_rate: 0.05  # 5% error rate
-      processing_time: 3600  # 1 hour
-      quality_score: 80  # minimum quality score
-
-# ===== การตั้งค่า Cache =====
-cache:
-  redis:
-    enabled: false
-    host: "localhost"
-    port: 6379
-    database: 0
-    password: null
-    ttl: 3600  # seconds
-
-# ===== การตั้งค่า File Storage =====
-storage:
-  # Local file storage
-  local:
-    data_path: "data/"
-    temp_path: "temp/"
-    output_path: "output/"
-    
-  # Cloud storage (optional)
-  cloud:
-    aws_s3:
-      enabled: false
-      bucket: "dataops-bucket"
-      region: "us-east-1"
-      access_key: "ACCESS_KEY"
-      secret_key: "SECRET_KEY"
+      password: "changeme"
+      from_address: "DataOps Foundation <alerts@company.com>"
+      to_addresses: ["admin@company.com"]
       
-    azure_blob:
+    webhook:
       enabled: false
-      account_name: "storageaccount"
-      account_key: "ACCOUNT_KEY"
-      container: "dataops-container"
+      url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+      timeout: 30
 
-# ===== การตั้งค่า ETL Pipeline =====
 etl:
-  # การตั้งค่าสำหรับ column type inference
-  column_inference:
-    datetime_patterns:
-      - "%Y-%m-%d %H:%M:%S"
-      - "%Y-%m-%d"
-      - "%m/%d/%Y"
-      - "%d-%m-%Y"
+  batch_size: 10000
+  max_workers: 4
+  timeout: 3600
+  retry_attempts: 3
+  retry_delay: 60
+  chunk_size: 1000
+  
+  processing:
+    parallel_processing: true
+    memory_limit: "2GB"
+    temp_directory: "temp/"
     
-    # ตัวอย่างข้อมูลที่ใช้ในการอนุมาน (จำนวนแถว)
-    sample_size: 1000
-    
-  # การตั้งค่า dimensional modeling
-  dimensional_model:
-    # สร้าง surrogate keys อัตโนมัติ
-    auto_generate_keys: true
-    
-    # รูปแบบการตั้งชื่อ dimension tables
-    dimension_table_suffix: "_dim"
-    
-    # รูปแบบการตั้งชื่อ fact tables
-    fact_table_suffix: "_fact"
+  pipelines:
+    default:
+      enable_monitoring: true
+      enable_profiling: true
+      auto_backup: true
+      
+  transformations:
+    date_formats: ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d %H:%M:%S"]
+    text_encoding: "utf-8"
+    decimal_separator: "."
+    thousands_separator: ","
 
-# ===== การตั้งค่า Security =====
 security:
-  # การเข้ารหัสข้อมูลที่สำคัญ
+  encryption_key: "change-this-secret-key-in-production"
+  jwt_secret: "jwt-secret-key-change-in-production"
+  password_min_length: 8
+  session_timeout: 3600
+  
+  authentication:
+    enabled: false
+    provider: "local"  # local, ldap, oauth
+    
+  authorization:
+    enabled: false
+    role_based: true
+    
   encryption:
     enabled: false
-    algorithm: "AES-256"
-    key_path: "config/encryption.key"
+    algorithm: "AES-256-GCM"
     
-  # การตรวจสอบ data lineage
   audit:
     enabled: true
-    log_all_transformations: true
-    track_data_lineage: true
+    log_level: "INFO"
+    retention_days: 90
 
-# ===== การตั้งค่าสภาพแวดล้อม =====
-environment:
-  name: "development"  # development, testing, staging, production
-  debug: true
+storage:
+  data_directory: "data/"
+  temp_directory: "temp/"
+  backup_directory: "backup/"
+  logs_directory: "logs/"
   
-  # การตั้งค่าเฉพาะสภาพแวดล้อม
-  development:
-    database:
-      host: "localhost"
-      database: "dataops_dev"
-    logging:
-      level: "DEBUG"
-      
-  production:
-    database:
-      host: "prod-db-server"
-      database: "dataops_prod"
-    logging:
-      level: "INFO"
-    monitoring:
-      enabled: true
-    security:
-      encryption:
-        enabled: true
+  limits:
+    max_file_size: "100MB"
+    max_total_size: "10GB"
+    
+  allowed_file_types: ["csv", "json", "xlsx", "parquet", "txt"]
+  
+  cleanup:
+    enabled: true
+    temp_retention_hours: 24
+    backup_retention_days: 30
 
-# ===== Features Flags =====
+performance:
+  profiling:
+    enabled: false
+    sample_rate: 0.1
+    
+  caching:
+    enabled: true
+    type: "memory"  # memory, redis, file
+    max_size: "500MB"
+    ttl: 3600
+    
+  optimization:
+    lazy_loading: true
+    batch_operations: true
+    connection_pooling: true
+
+integrations:
+  prometheus:
+    enabled: false
+    port: 9090
+    metrics_path: "/metrics"
+    
+  grafana:
+    enabled: false
+    dashboard_url: "http://localhost:3000"
+    
+  jenkins:
+    enabled: false
+    url: "http://localhost:8080"
+    username: "admin"
+    api_token: "your-api-token"
+    
+  docker:
+    enabled: false
+    registry: "docker.io"
+    image_prefix: "dataops-foundation"
+    
+  kubernetes:
+    enabled: false
+    namespace: "dataops"
+    config_file: "~/.kube/config"
+
 features:
-  # เปิดใช้งาน advanced data profiling
-  advanced_profiling: true
-  
-  # เปิดใช้งาน machine learning-based anomaly detection
-  ml_anomaly_detection: false
-  
-  # เปิดใช้งาน real-time processing
-  real_time_processing: false
-  
-  # เปิดใช้งาน data versioning
-  data_versioning: true
-  
-  # เปิดใช้งาน auto-scaling
-  auto_scaling: false
+  experimental:
+    enabled: false
+    features: []
+    
+  beta:
+    enabled: false
+    features: []
+    
+  advanced:
+    machine_learning: false
+    real_time_processing: false
+    distributed_computing: false

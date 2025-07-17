@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DataOps Foundation - Advanced Logger
-ระบบ logging ขั้นสูงสำหรับ DataOps Foundation
+DataOps Foundation - Logger
+ตัวจัดการการ logging ขั้นสูง
 
 Features:
-- Multiple log levels and handlers
 - Structured logging with JSON format
-- Log rotation and archiving
-- Performance monitoring
-- Error tracking and alerting
-- Integration with external systems
+- Log rotation and compression
+- Multiple log levels and handlers
+- Context-aware logging
+- Performance logging
+- Error tracking
 """
 
 import logging
@@ -18,147 +18,99 @@ import logging.handlers
 import json
 import os
 import sys
+import traceback
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
-import traceback
-
-
-class JSONFormatter(logging.Formatter):
-    """JSON Formatter สำหรับ structured logging"""
-    
-    def format(self, record):
-        """จัดรูปแบบ log record เป็น JSON"""
-        log_entry = {
-            'timestamp': datetime.fromtimestamp(record.created).isoformat(),
-            'level': record.levelname,
-            'logger': record.name,
-            'message': record.getMessage(),
-            'module': record.module,
-            'function': record.funcName,
-            'line': record.lineno,
-            'thread': record.thread,
-            'thread_name': record.threadName,
-        }
-        
-        # เพิ่มข้อมูล exception หากมี
-        if record.exc_info:
-            log_entry['exception'] = {
-                'type': record.exc_info[0].__name__,
-                'message': str(record.exc_info[1]),
-                'traceback': traceback.format_exception(*record.exc_info)
-            }
-        
-        # เพิ่ม extra fields หากมี
-        if hasattr(record, 'extra_fields'):
-            log_entry.update(record.extra_fields)
-        
-        return json.dumps(log_entry, ensure_ascii=False)
+import threading
+import time
 
 
 class DataOpsLogger:
     """
-    Advanced Logger สำหรับ DataOps Foundation
+    Logger ขั้นสูงสำหรับ DataOps Foundation
+    รองรับหลายรูปแบบการ logging และการจัดการไฟล์
     """
     
-    def __init__(self, name: str, config: Optional[Dict] = None):
+    def __init__(self, name: str, config: Dict[str, Any] = None):
         """เริ่มต้น DataOps Logger"""
         self.name = name
         self.config = config or {}
         self.logger = logging.getLogger(name)
+        self.context = {}
+        self.performance_data = {}
         
-        # ป้องกันการตั้งค่าซ้ำ
-        if not self.logger.handlers:
-            self._setup_logger()
-    
+        # ตั้งค่า logger
+        self._setup_logger()
+        
     def _setup_logger(self):
-        """ตั้งค่า logger"""
-        # ตั้งค่า log level
+        """ตั้งค่า logger ตามการตั้งค่า"""
+        # ป้องกันการตั้งค่าซ้ำ
+        if self.logger.handlers:
+            return
+        
+        # ตั้งค่า level
         log_level = self.config.get('logging', {}).get('level', 'INFO')
         self.logger.setLevel(getattr(logging, log_level.upper()))
         
-        # ตั้งค่า console handler
-        self._setup_console_handler()
+        # สร้าง formatter
+        formatter = self._create_formatter()
         
-        # ตั้งค่า file handler หากเปิดใช้งาน
-        if self.config.get('logging', {}).get('file', {}).get('enabled', True):
-            self._setup_file_handler()
-        
-        # ตั้งค่า external handlers หากเปิดใช้งาน
-        self._setup_external_handlers()
-    
-    def _setup_console_handler(self):
-        """ตั้งค่า console handler"""
+        # Console handler
         console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
         
-        # กำหนด format สำหรับ console
-        console_format = self.config.get('logging', {}).get('format', 
+        # File handler (ถ้ามี)
+        log_file = self.config.get('logging', {}).get('file')
+        if log_file:
+            file_handler = self._create_file_handler(log_file)
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+        
+        # Error file handler
+        error_file = self.config.get('logging', {}).get('error_file', 'error.log')
+        error_handler = self._create_file_handler(error_file)
+        error_handler.setLevel(logging.ERROR)
+        error_handler.setFormatter(formatter)
+        self.logger.addHandler(error_handler)
+        
+        # ป้องกัน propagation
+        self.logger.propagate = False
+    
+    def _create_formatter(self) -> logging.Formatter:
+        """สร้าง formatter สำหรับ log messages"""
+        log_format = self.config.get('logging', {}).get('format', 
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         
-        formatter = logging.Formatter(console_format)
-        console_handler.setFormatter(formatter)
+        # ตรวจสอบว่าต้องการ JSON format หรือไม่
+        use_json = self.config.get('logging', {}).get('json_format', False)
         
-        self.logger.addHandler(console_handler)
+        if use_json:
+            return JsonFormatter()
+        else:
+            return ColoredFormatter(log_format)
     
-    def _setup_file_handler(self):
-        """ตั้งค่า file handler พร้อม rotation"""
-        file_config = self.config.get('logging', {}).get('file', {})
+    def _create_file_handler(self, log_file: str) -> logging.Handler:
+        """สร้าง file handler พร้อม rotation"""
+        # สร้างโฟลเดอร์ถ้าไม่มี
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
         
-        # สร้างไดเรกทอรี logs หากไม่มี
-        log_path = file_config.get('path', 'logs/dataops.log')
-        log_dir = os.path.dirname(log_path)
-        os.makedirs(log_dir, exist_ok=True)
+        # ตั้งค่า rotation
+        max_size = self._parse_size(self.config.get('logging', {}).get('max_size', '10MB'))
+        backup_count = self.config.get('logging', {}).get('backup_count', 5)
         
-        # ตั้งค่า rotating file handler
-        max_bytes = self._parse_size(file_config.get('max_size', '10MB'))
-        backup_count = file_config.get('backup_count', 5)
-        
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_path,
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding='utf-8'
+        handler = logging.handlers.RotatingFileHandler(
+            log_file, maxBytes=max_size, backupCount=backup_count
         )
         
-        # ใช้ JSON formatter สำหรับไฟล์
-        json_formatter = JSONFormatter()
-        file_handler.setFormatter(json_formatter)
-        
-        self.logger.addHandler(file_handler)
-    
-    def _setup_external_handlers(self):
-        """ตั้งค่า external handlers (Elasticsearch, etc.)"""
-        # Elasticsearch handler
-        es_config = self.config.get('logging', {}).get('external', {}).get('elasticsearch', {})
-        if es_config.get('enabled', False):
-            try:
-                from elasticsearch import Elasticsearch
-                from cmreslogging.handlers import CMRESHandler
-                
-                es_client = Elasticsearch([{
-                    'host': es_config.get('host', 'localhost'),
-                    'port': es_config.get('port', 9200)
-                }])
-                
-                es_handler = CMRESHandler(
-                    hosts=[{'host': es_config.get('host', 'localhost'), 
-                           'port': es_config.get('port', 9200)}],
-                    auth_type=CMRESHandler.AuthType.NO_AUTH,
-                    es_index_name=es_config.get('index', 'dataops-logs'),
-                    es_doc_type='log'
-                )
-                
-                self.logger.addHandler(es_handler)
-                
-            except ImportError:
-                self.logger.warning("Elasticsearch logging requires cmreslogging package")
-            except Exception as e:
-                self.logger.error(f"Failed to setup Elasticsearch handler: {e}")
+        return handler
     
     def _parse_size(self, size_str: str) -> int:
         """แปลงขนาดไฟล์จาก string เป็น bytes"""
         size_str = size_str.upper()
-        
         if size_str.endswith('KB'):
             return int(size_str[:-2]) * 1024
         elif size_str.endswith('MB'):
@@ -168,193 +120,320 @@ class DataOpsLogger:
         else:
             return int(size_str)
     
-    def log_with_context(self, level: str, message: str, **kwargs):
-        """Log พร้อม context ข้อมูลเพิ่มเติม"""
-        # สร้าง LogRecord ใหม่
-        record = self.logger.makeRecord(
-            self.logger.name,
-            getattr(logging, level.upper()),
-            __file__,
-            0,
-            message,
-            (),
-            None
-        )
+    def set_context(self, **kwargs):
+        """ตั้งค่า context สำหรับ logging"""
+        self.context.update(kwargs)
+    
+    def clear_context(self):
+        """ล้าง context"""
+        self.context.clear()
+    
+    def debug(self, message: str, extra: Dict[str, Any] = None):
+        """Log debug message"""
+        self._log(logging.DEBUG, message, extra)
+    
+    def info(self, message: str, extra: Dict[str, Any] = None):
+        """Log info message"""
+        self._log(logging.INFO, message, extra)
+    
+    def warning(self, message: str, extra: Dict[str, Any] = None):
+        """Log warning message"""
+        self._log(logging.WARNING, message, extra)
+    
+    def error(self, message: str, extra: Dict[str, Any] = None, exc_info: bool = False):
+        """Log error message"""
+        self._log(logging.ERROR, message, extra, exc_info)
+    
+    def critical(self, message: str, extra: Dict[str, Any] = None, exc_info: bool = False):
+        """Log critical message"""
+        self._log(logging.CRITICAL, message, extra, exc_info)
+    
+    def _log(self, level: int, message: str, extra: Dict[str, Any] = None, exc_info: bool = False):
+        """Internal log method"""
+        # รวม context และ extra
+        log_extra = self.context.copy()
+        if extra:
+            log_extra.update(extra)
+        
+        # เพิ่มข้อมูลเกี่ยวกับ thread
+        log_extra['thread_id'] = threading.current_thread().ident
+        log_extra['thread_name'] = threading.current_thread().name
+        
+        # Log message
+        self.logger.log(level, message, extra=log_extra, exc_info=exc_info)
+    
+    def log_exception(self, message: str = "Exception occurred", extra: Dict[str, Any] = None):
+        """Log exception พร้อม stack trace"""
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        
+        if exc_type is not None:
+            exception_info = {
+                'exception_type': exc_type.__name__,
+                'exception_message': str(exc_value),
+                'stack_trace': traceback.format_tb(exc_traceback)
+            }
+            
+            log_extra = extra.copy() if extra else {}
+            log_extra.update(exception_info)
+            
+            self.error(message, log_extra, exc_info=True)
+    
+    def start_performance_timer(self, operation_name: str):
+        """เริ่มต้นการวัดประสิทธิภาพ"""
+        self.performance_data[operation_name] = {
+            'start_time': time.time(),
+            'thread_id': threading.current_thread().ident
+        }
+        
+        self.debug(f"Started performance timer: {operation_name}")
+    
+    def end_performance_timer(self, operation_name: str, extra: Dict[str, Any] = None):
+        """สิ้นสุดการวัดประสิทธิภาพ"""
+        if operation_name not in self.performance_data:
+            self.warning(f"Performance timer not found: {operation_name}")
+            return
+        
+        start_data = self.performance_data[operation_name]
+        end_time = time.time()
+        duration = end_time - start_data['start_time']
+        
+        log_extra = extra.copy() if extra else {}
+        log_extra.update({
+            'operation_name': operation_name,
+            'duration_seconds': duration,
+            'start_time': start_data['start_time'],
+            'end_time': end_time
+        })
+        
+        self.info(f"Performance: {operation_name} completed in {duration:.3f}s", log_extra)
+        
+        # ลบข้อมูลการวัด
+        del self.performance_data[operation_name]
+    
+    def log_data_quality(self, dataset_name: str, quality_score: float, 
+                        details: Dict[str, Any] = None):
+        """Log ข้อมูลคุณภาพข้อมูล"""
+        log_extra = {
+            'dataset_name': dataset_name,
+            'quality_score': quality_score,
+            'category': 'data_quality'
+        }
+        
+        if details:
+            log_extra.update(details)
+        
+        level = logging.INFO if quality_score >= 80 else logging.WARNING
+        message = f"Data quality: {dataset_name} scored {quality_score:.1f}%"
+        
+        self._log(level, message, log_extra)
+    
+    def log_pipeline_event(self, pipeline_name: str, event_type: str, 
+                          status: str, details: Dict[str, Any] = None):
+        """Log pipeline events"""
+        log_extra = {
+            'pipeline_name': pipeline_name,
+            'event_type': event_type,
+            'status': status,
+            'category': 'pipeline'
+        }
+        
+        if details:
+            log_extra.update(details)
+        
+        level = logging.INFO if status == 'success' else logging.ERROR
+        message = f"Pipeline {pipeline_name}: {event_type} - {status}"
+        
+        self._log(level, message, log_extra)
+    
+    def log_system_metric(self, metric_name: str, value: float, 
+                         unit: str = "", tags: Dict[str, str] = None):
+        """Log system metrics"""
+        log_extra = {
+            'metric_name': metric_name,
+            'metric_value': value,
+            'metric_unit': unit,
+            'category': 'system_metric'
+        }
+        
+        if tags:
+            log_extra.update(tags)
+        
+        self.debug(f"Metric: {metric_name} = {value}{unit}", log_extra)
+
+
+class JsonFormatter(logging.Formatter):
+    """JSON formatter สำหรับ structured logging"""
+    
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record เป็น JSON"""
+        log_entry = {
+            'timestamp': datetime.fromtimestamp(record.created).isoformat(),
+            'level': record.levelname,
+            'logger': record.name,
+            'message': record.getMessage(),
+            'module': record.module,
+            'function': record.funcName,
+            'line': record.lineno
+        }
+        
+        # เพิ่มข้อมูลเพิ่มเติม
+        if hasattr(record, 'thread_id'):
+            log_entry['thread_id'] = record.thread_id
+        
+        if hasattr(record, 'thread_name'):
+            log_entry['thread_name'] = record.thread_name
         
         # เพิ่ม extra fields
-        record.extra_fields = kwargs
+        for key, value in record.__dict__.items():
+            if key not in ['name', 'msg', 'args', 'levelname', 'levelno', 'pathname', 
+                          'filename', 'module', 'exc_info', 'exc_text', 'stack_info',
+                          'lineno', 'funcName', 'created', 'msecs', 'relativeCreated',
+                          'thread', 'threadName', 'processName', 'process', 'message']:
+                log_entry[key] = value
         
-        # Handle the record
-        self.logger.handle(record)
-    
-    def log_performance(self, operation: str, duration: float, **kwargs):
-        """Log performance metrics"""
-        self.log_with_context(
-            'INFO',
-            f"Performance: {operation} completed in {duration:.2f}s",
-            operation=operation,
-            duration=duration,
-            metric_type='performance',
-            **kwargs
-        )
-    
-    def log_data_quality(self, check_name: str, score: float, passed: bool, **kwargs):
-        """Log data quality results"""
-        self.log_with_context(
-            'INFO' if passed else 'WARNING',
-            f"Data Quality: {check_name} - Score: {score:.2f}% - {'PASS' if passed else 'FAIL'}",
-            check_name=check_name,
-            score=score,
-            passed=passed,
-            metric_type='data_quality',
-            **kwargs
-        )
-    
-    def log_etl_stage(self, stage: str, status: str, records: int = 0, **kwargs):
-        """Log ETL pipeline stages"""
-        self.log_with_context(
-            'INFO',
-            f"ETL Stage: {stage} - Status: {status} - Records: {records}",
-            stage=stage,
-            status=status,
-            records=records,
-            metric_type='etl_pipeline',
-            **kwargs
-        )
-    
-    def log_error_with_context(self, error: Exception, operation: str, **kwargs):
-        """Log error พร้อม context และ traceback"""
-        self.logger.error(
-            f"Error in {operation}: {str(error)}",
-            exc_info=True,
-            extra={
-                'operation': operation,
-                'error_type': type(error).__name__,
-                'metric_type': 'error',
-                **kwargs
-            }
-        )
-    
-    def debug(self, message: str, **kwargs):
-        """Debug level logging"""
-        if kwargs:
-            self.log_with_context('DEBUG', message, **kwargs)
-        else:
-            self.logger.debug(message)
-    
-    def info(self, message: str, **kwargs):
-        """Info level logging"""
-        if kwargs:
-            self.log_with_context('INFO', message, **kwargs)
-        else:
-            self.logger.info(message)
-    
-    def warning(self, message: str, **kwargs):
-        """Warning level logging"""
-        if kwargs:
-            self.log_with_context('WARNING', message, **kwargs)
-        else:
-            self.logger.warning(message)
-    
-    def error(self, message: str, **kwargs):
-        """Error level logging"""
-        if kwargs:
-            self.log_with_context('ERROR', message, **kwargs)
-        else:
-            self.logger.error(message)
-    
-    def critical(self, message: str, **kwargs):
-        """Critical level logging"""
-        if kwargs:
-            self.log_with_context('CRITICAL', message, **kwargs)
-        else:
-            self.logger.critical(message)
+        # เพิ่ม exception info
+        if record.exc_info:
+            log_entry['exception'] = self.formatException(record.exc_info)
+        
+        return json.dumps(log_entry, ensure_ascii=False, default=str)
 
 
-def setup_logger(name: str, config: Optional[Dict] = None) -> DataOpsLogger:
-    """สร้าง DataOps Logger instance"""
+class ColoredFormatter(logging.Formatter):
+    """Colored formatter สำหรับ console output"""
+    
+    # สีสำหรับแต่ละ level
+    COLORS = {
+        'DEBUG': '\033[36m',      # Cyan
+        'INFO': '\033[32m',       # Green
+        'WARNING': '\033[33m',    # Yellow
+        'ERROR': '\033[31m',      # Red
+        'CRITICAL': '\033[35m'    # Magenta
+    }
+    
+    RESET = '\033[0m'
+    
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record พร้อมสี"""
+        # เพิ่มสี
+        if record.levelname in self.COLORS:
+            record.levelname = f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
+        
+        # Format message
+        formatted = super().format(record)
+        
+        return formatted
+
+
+def setup_logger(name: str, config: Dict[str, Any] = None) -> DataOpsLogger:
+    """สร้าง logger ใหม่"""
     return DataOpsLogger(name, config)
 
 
-class LoggingContext:
-    """Context manager สำหรับ logging พร้อม automatic performance tracking"""
+def get_logger(name: str) -> DataOpsLogger:
+    """ดึง logger ที่มีอยู่แล้ว"""
+    return DataOpsLogger(name)
+
+
+class LoggerContext:
+    """Context manager สำหรับ logging"""
     
-    def __init__(self, logger: DataOpsLogger, operation: str, **context):
+    def __init__(self, logger: DataOpsLogger, **context):
         self.logger = logger
-        self.operation = operation
         self.context = context
-        self.start_time = None
+        self.original_context = None
     
     def __enter__(self):
-        self.start_time = datetime.now()
-        self.logger.info(f"Starting operation: {self.operation}", **self.context)
+        self.original_context = self.logger.context.copy()
+        self.logger.set_context(**self.context)
+        return self.logger
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.logger.context = self.original_context
+        
+        # Log exception ถ้ามี
+        if exc_type is not None:
+            self.logger.log_exception(f"Exception in context: {exc_type.__name__}")
+
+
+class PerformanceTimer:
+    """Context manager สำหรับการวัดประสิทธิภาพ"""
+    
+    def __init__(self, logger: DataOpsLogger, operation_name: str, **extra):
+        self.logger = logger
+        self.operation_name = operation_name
+        self.extra = extra
+    
+    def __enter__(self):
+        self.logger.start_performance_timer(self.operation_name)
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        duration = (datetime.now() - self.start_time).total_seconds()
-        
-        if exc_type is None:
-            # Success
-            self.logger.log_performance(self.operation, duration, **self.context)
-            self.logger.info(f"Completed operation: {self.operation}", **self.context)
-        else:
-            # Error
-            self.logger.log_error_with_context(exc_val, self.operation, 
-                                             duration=duration, **self.context)
-        
-        return False  # Don't suppress exceptions
+        self.logger.end_performance_timer(self.operation_name, self.extra)
 
 
 def main():
-    """ตัวอย่างการใช้งาน DataOps Logger"""
-    print("=== DataOps Foundation Advanced Logger ===")
+    """ตัวอย่างการใช้งาน Logger"""
+    print("=== DataOps Foundation Logger ===")
     
-    # ตั้งค่า logger
+    # ตั้งค่า config
     config = {
         'logging': {
-            'level': 'INFO',
-            'file': {
-                'enabled': True,
-                'path': 'logs/example.log',
-                'max_size': '5MB',
-                'backup_count': 3
-            }
+            'level': 'DEBUG',
+            'file': 'logs/dataops.log',
+            'error_file': 'logs/error.log',
+            'json_format': False,
+            'max_size': '5MB',
+            'backup_count': 3
         }
     }
     
-    logger = setup_logger('dataops.example', config)
+    # สร้าง logger
+    logger = setup_logger('test_logger', config)
     
-    # ตัวอย่างการ log แบบต่างๆ
-    logger.info("DataOps Foundation logger initialized")
+    # ตั้งค่า context
+    logger.set_context(user_id='admin', session_id='abc123')
     
-    # Log พร้อม context
-    logger.log_with_context('INFO', 'Processing data batch', 
-                           batch_id=12345, records=1000, source='csv')
+    # ทดสอบ log levels
+    logger.debug("Debug message")
+    logger.info("Info message")
+    logger.warning("Warning message")
+    logger.error("Error message")
+    logger.critical("Critical message")
     
-    # Log performance
-    logger.log_performance('data_loading', 2.5, records=1000, source='database')
+    # ทดสอบ performance timer
+    with PerformanceTimer(logger, 'test_operation'):
+        time.sleep(0.1)  # จำลองการทำงาน
+        logger.info("Operation in progress")
     
-    # Log data quality
-    logger.log_data_quality('completeness_check', 95.5, True, 
-                           dataset='loans', columns=15)
-    
-    # Log ETL stage
-    logger.log_etl_stage('transformation', 'completed', records=950,
-                        stage_duration=1.2)
-    
-    # ตัวอย่างการใช้ LoggingContext
+    # ทดสอบ exception logging
     try:
-        with LoggingContext(logger, 'complex_operation', task_id='task_001'):
-            # Simulate some work
-            import time
-            time.sleep(1)
-            # Simulate an operation that might fail
-            if False:  # Change to True to test error logging
-                raise ValueError("Simulated error")
-    except Exception as e:
-        pass
+        raise ValueError("Test exception")
+    except Exception:
+        logger.log_exception("Test exception occurred")
     
-    print("✅ Logging examples completed. Check logs/example.log for output.")
+    # ทดสอบ data quality logging
+    logger.log_data_quality('test_dataset', 85.5, {
+        'completeness': 0.90,
+        'uniqueness': 0.95,
+        'records': 10000
+    })
+    
+    # ทดสอบ pipeline logging
+    logger.log_pipeline_event('test_pipeline', 'start', 'success')
+    logger.log_pipeline_event('test_pipeline', 'end', 'success', {
+        'duration': 120.5,
+        'processed_records': 10000
+    })
+    
+    # ทดสอบ system metric logging
+    logger.log_system_metric('cpu_usage', 75.2, '%', {'host': 'server1'})
+    
+    # ทดสอบ context manager
+    with LoggerContext(logger, pipeline_name='test_pipeline', step='validation'):
+        logger.info("Processing data validation")
+        logger.warning("Found 5 invalid records")
+    
+    print("\n✅ Logger test completed. Check logs/ directory for output files.")
 
 
 if __name__ == "__main__":
