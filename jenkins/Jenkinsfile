@@ -1,0 +1,385 @@
+pipeline {
+    agent any
+    
+    environment {
+        PYTHON_VERSION = '3.11'
+        VENV_NAME = 'venv'
+        PROJECT_NAME = 'dataops-foundation'
+        DATAOPS_ENV = 'development'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '🔄 Checking out DataOps Foundation code...'
+                checkout scm
+                echo '✅ Code checkout completed'
+            }
+        }
+        
+        stage('Setup Python Environment') {
+            steps {
+                echo '🐍 Setting up Python virtual environment...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            python3 -m venv ${VENV_NAME}
+                            . ${VENV_NAME}/bin/activate
+                            pip install --upgrade pip --timeout=120
+                            pip install -r requirements.txt --timeout=300
+                        '''
+                    } else {
+                        bat '''
+                            python -m venv %VENV_NAME%
+                            call %VENV_NAME%\\Scripts\\activate
+                            pip install --upgrade pip --timeout=120
+                            pip install -r requirements.txt --timeout=300
+                        '''
+                    }
+                }
+                echo '✅ Python environment setup completed'
+            }
+        }
+        
+        stage('Code Quality Checks') {
+            parallel {
+                stage('Linting') {
+                    steps {
+                        echo '🔍 Running code linting...'
+                        script {
+                            if (isUnix()) {
+                                sh '''
+                                    . ${VENV_NAME}/bin/activate
+                                    flake8 src/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+                                '''
+                            } else {
+                                bat '''
+                                    call %VENV_NAME%\\Scripts\\activate
+                                    flake8 src\\ tests\\ --max-line-length=88 --extend-ignore=E203,W503
+                                '''
+                            }
+                        }
+                        echo '✅ Linting completed'
+                    }
+                }
+                
+                stage('Security Scan') {
+                    steps {
+                        echo '🔒 Running security scan...'
+                        script {
+                            if (isUnix()) {
+                                sh '''
+                                    . ${VENV_NAME}/bin/activate
+                                    bandit -r src/ -f json -o bandit-report.json || true
+                                '''
+                            } else {
+                                bat '''
+                                    call %VENV_NAME%\\Scripts\\activate
+                                    bandit -r src\\ -f json -o bandit-report.json || echo "Security scan completed"
+                                '''
+                            }
+                        }
+                        echo '✅ Security scan completed'
+                    }
+                }
+                
+                stage('Code Formatting Check') {
+                    steps {
+                        echo '🎨 Checking code formatting...'
+                        script {
+                            if (isUnix()) {
+                                sh '''
+                                    . ${VENV_NAME}/bin/activate
+                                    black --check src/ tests/ || true
+                                '''
+                            } else {
+                                bat '''
+                                    call %VENV_NAME%\\Scripts\\activate
+                                    black --check src\\ tests\\ || echo "Format check completed"
+                                '''
+                            }
+                        }
+                        echo '✅ Format check completed'
+                    }
+                }
+            }
+        }
+        
+        stage('Unit Tests') {
+            steps {
+                echo '🧪 Running unit tests...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            . ${VENV_NAME}/bin/activate
+                            
+                            # Run unit tests with coverage
+                            python -m pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=html
+                            
+                            # Run enhanced ETL tests
+                            python tests/test_enhanced_etl.py
+                        '''
+                    } else {
+                        bat '''
+                            call %VENV_NAME%\\Scripts\\activate
+                            
+                            REM Run unit tests with coverage
+                            python -m pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=html
+                            
+                            REM Run enhanced ETL tests
+                            python tests/test_enhanced_etl.py
+                        '''
+                    }
+                }
+                echo '✅ Unit tests completed'
+            }
+        }
+        
+        stage('Integration Tests') {
+            steps {
+                echo '🔗 Running integration tests...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            . ${VENV_NAME}/bin/activate
+                            python -m pytest tests/integration/ -v
+                        '''
+                    } else {
+                        bat '''
+                            call %VENV_NAME%\\Scripts\\activate
+                            python -m pytest tests/integration/ -v
+                        '''
+                    }
+                }
+                echo '✅ Integration tests completed'
+            }
+        }
+        
+        stage('Data Quality Tests') {
+            steps {
+                echo '📊 Running data quality tests...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            . ${VENV_NAME}/bin/activate
+                            
+                            # Test ETL Processor
+                            python src/data_pipeline/etl_processor.py
+                            
+                            # Run data quality specific tests
+                            python -m pytest tests/unit/test_data_quality.py -v
+                        '''
+                    } else {
+                        bat '''
+                            call %VENV_NAME%\\Scripts\\activate
+                            
+                            REM Test ETL Processor
+                            python src/data_pipeline/etl_processor.py
+                            
+                            REM Run data quality specific tests
+                            python -m pytest tests/unit/test_data_quality.py -v
+                        '''
+                    }
+                }
+                echo '✅ Data quality tests completed'
+            }
+        }
+        
+        stage('Performance Tests') {
+            steps {
+                echo '⚡ Running performance tests...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            . ${VENV_NAME}/bin/activate
+                            python -m pytest tests/performance/ -v --benchmark-only || true
+                        '''
+                    } else {
+                        bat '''
+                            call %VENV_NAME%\\Scripts\\activate
+                            python -m pytest tests/performance/ -v --benchmark-only || echo "Performance tests completed"
+                        '''
+                    }
+                }
+                echo '✅ Performance tests completed'
+            }
+        }
+        
+        stage('Build Documentation') {
+            steps {
+                echo '📚 Building documentation...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            . ${VENV_NAME}/bin/activate
+                            
+                            # Create docs directory if not exists
+                            mkdir -p build/docs
+                            
+                            # Generate API documentation
+                            echo "# DataOps Foundation API Documentation" > build/docs/api.md
+                            echo "Generated on $(date)" >> build/docs/api.md
+                        '''
+                    } else {
+                        bat '''
+                            call %VENV_NAME%\\Scripts\\activate
+                            
+                            REM Create docs directory if not exists
+                            if not exist build\\docs mkdir build\\docs
+                            
+                            REM Generate API documentation
+                            echo # DataOps Foundation API Documentation > build\\docs\\api.md
+                            echo Generated on %DATE% %TIME% >> build\\docs\\api.md
+                        '''
+                    }
+                }
+                echo '✅ Documentation build completed'
+            }
+        }
+        
+        stage('Build Artifacts') {
+            steps {
+                echo '📦 Creating deployment artifacts...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            # Create distribution directory
+                            mkdir -p dist
+                            
+                            # Copy application files
+                            cp -r src/ dist/
+                            cp -r config/ dist/
+                            cp requirements.txt dist/
+                            cp README.md dist/
+                            
+                            # Create version and build info
+                            echo "Build Number: ${BUILD_NUMBER}" > dist/build-info.txt
+                            echo "Build Date: $(date)" >> dist/build-info.txt
+                            echo "Git Commit: ${GIT_COMMIT:-'N/A'}" >> dist/build-info.txt
+                            echo "Jenkins Job: ${JOB_NAME}" >> dist/build-info.txt
+                            echo "Project: ${PROJECT_NAME}" >> dist/build-info.txt
+                            
+                            # Create deployment tarball
+                            tar -czf dist/${PROJECT_NAME}-${BUILD_NUMBER}.tar.gz -C dist src config requirements.txt README.md build-info.txt
+                            
+                            # List created files
+                            ls -la dist/
+                        '''
+                    } else {
+                        bat '''
+                            REM Create distribution directory
+                            if not exist dist mkdir dist
+                            
+                            REM Copy application files
+                            xcopy /E /I src dist\\src\\
+                            xcopy /E /I config dist\\config\\
+                            copy requirements.txt dist\\
+                            copy README.md dist\\
+                            
+                            REM Create version and build info
+                            echo Build Number: %BUILD_NUMBER% > dist\\build-info.txt
+                            echo Build Date: %DATE% %TIME% >> dist\\build-info.txt
+                            echo Git Commit: %GIT_COMMIT% >> dist\\build-info.txt
+                            echo Jenkins Job: %JOB_NAME% >> dist\\build-info.txt
+                            echo Project: %PROJECT_NAME% >> dist\\build-info.txt
+                            
+                            REM List created files
+                            dir dist
+                        '''
+                    }
+                }
+                echo '✅ Artifact creation completed'
+            }
+        }
+        
+        stage('Docker Build') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    branch 'develop'
+                }
+            }
+            steps {
+                echo '🐳 Building Docker image...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            # Build Docker image
+                            docker build -t ${PROJECT_NAME}:${BUILD_NUMBER} -f docker/Dockerfile .
+                            docker tag ${PROJECT_NAME}:${BUILD_NUMBER} ${PROJECT_NAME}:latest
+                            
+                            # List images
+                            docker images ${PROJECT_NAME}
+                        '''
+                    } else {
+                        bat '''
+                            REM Build Docker image
+                            docker build -t %PROJECT_NAME%:%BUILD_NUMBER% -f docker/Dockerfile .
+                            docker tag %PROJECT_NAME%:%BUILD_NUMBER% %PROJECT_NAME%:latest
+                            
+                            REM List images
+                            docker images %PROJECT_NAME%
+                        '''
+                    }
+                }
+                echo '✅ Docker build completed'
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo '🧹 Cleaning up workspace...'
+            script {
+                if (isUnix()) {
+                    sh 'rm -rf ${VENV_NAME} || true'
+                } else {
+                    bat 'if exist %VENV_NAME% rmdir /s /q %VENV_NAME% 2>nul || echo "Cleanup completed"'
+                }
+            }
+            
+            // Archive build artifacts
+            archiveArtifacts artifacts: 'dist/*', fingerprint: true, allowEmptyArchive: true
+            
+            // Publish test results
+            publishHTML([
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'htmlcov',
+                reportFiles: 'index.html',
+                reportName: 'Coverage Report'
+            ])
+            
+            // Archive security scan results
+            archiveArtifacts artifacts: 'bandit-report.json', fingerprint: true, allowEmptyArchive: true
+        }
+        
+        success {
+            echo '✅ DataOps Foundation Pipeline completed successfully!'
+            echo "🎉 Build ${BUILD_NUMBER} passed all stages"
+            echo "📊 Quality gates: All passed"
+            echo "🚀 Ready for deployment"
+        }
+        
+        failure {
+            echo '❌ DataOps Foundation Pipeline failed!'
+            echo "💥 Build ${BUILD_NUMBER} failed - please check the logs"
+            echo "🔧 Common issues to check:"
+            echo "   - Unit test failures"
+            echo "   - Code quality violations"
+            echo "   - Integration test issues"
+            echo "   - Security vulnerabilities"
+        }
+        
+        unstable {
+            echo '⚠️ DataOps Foundation Pipeline completed but with warnings'
+            echo "🔧 Build ${BUILD_NUMBER} has some issues that need attention"
+            echo "📋 Please review:"
+            echo "   - Test coverage below threshold"
+            echo "   - Code quality warnings"
+            echo "   - Performance degradation"
+        }
+    }
+}

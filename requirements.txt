@@ -1,0 +1,112 @@
+# DataOps Foundation Requirements
+# Enhanced ETL Processing และ CI/CD Pipeline
+
+# Core Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+sqlalchemy>=2.0.0
+pymssql>=2.2.5
+PyYAML>=6.0
+
+# Database Connectors
+psycopg2-binary>=2.9.5
+redis>=4.5.0
+pymongo>=4.3.3
+
+# Data Quality และ Validation
+great_expectations>=0.17.0
+pandera>=0.15.0
+pydantic>=2.0.0
+
+# Testing Framework (จาก python-jenkins project)
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-benchmark>=4.0.0
+unittest-xml-reporting>=3.2.0
+
+# Code Quality Tools (จาก python-jenkins project)
+black>=23.0.0
+flake8>=6.0.0
+bandit>=1.7.5
+autopep8>=2.0.4
+coverage>=7.0.0
+
+# Web Framework (สำหรับ API และ Dashboard)
+flask>=2.3.0
+fastapi>=0.100.0
+uvicorn>=0.22.0
+streamlit>=1.25.0
+
+# Monitoring และ Observability
+prometheus-client>=0.17.0
+grafana-api>=1.0.3
+elasticsearch>=8.8.0
+loguru>=0.7.0
+
+# Data Visualization
+plotly>=5.15.0
+seaborn>=0.12.2
+matplotlib>=3.7.0
+
+# Development Tools
+jupyter>=1.0.0
+ipython>=8.0.0
+notebook>=6.5.4
+
+# Configuration และ Environment
+python-dotenv>=1.0.0
+click>=8.1.0
+rich>=13.0.0
+
+# Security
+cryptography>=41.0.0
+bcrypt>=4.0.0
+
+# Async Support
+aiofiles>=23.0.0
+asyncio-mqtt>=0.13.0
+
+# Data Validation และ Schema
+jsonschema>=4.17.0
+cerberus>=1.3.4
+
+# Machine Learning (Optional)
+scikit-learn>=1.3.0
+joblib>=1.3.0
+
+# Cloud Storage Support
+boto3>=1.26.0  # AWS S3
+azure-storage-blob>=12.16.0  # Azure Blob
+google-cloud-storage>=2.9.0  # Google Cloud Storage
+
+# Container และ Orchestration
+docker>=6.1.0
+kubernetes>=27.0.0
+
+# Performance Monitoring
+psutil>=5.9.0
+memory-profiler>=0.60.0
+
+# Date และ Time Handling
+python-dateutil>=2.8.2
+pytz>=2023.3
+
+# HTTP Clients
+requests>=2.31.0
+httpx>=0.24.0
+
+# Data Serialization
+orjson>=3.9.0
+msgpack>=1.0.5
+
+# Development Dependencies
+pre-commit>=3.3.0
+isort>=5.12.0
+mypy>=1.4.0
+
+# Documentation
+sphinx>=7.0.0
+sphinx-rtd-theme>=1.2.0
+mkdocs>=1.4.0
+mkdocs-material>=9.0.0

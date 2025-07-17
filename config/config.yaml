@@ -1,0 +1,236 @@
+# DataOps Foundation Configuration
+# การตั้งค่าหลักสำหรับ ETL Pipeline และ Data Quality
+
+# ===== การตั้งค่าฐานข้อมูล =====
+database:
+  primary:
+    type: "mssql"
+    host: "35.185.131.47"
+    port: 1433
+    database: "TestDB"
+    username: "SA"
+    password: "Passw0rd123456"
+    connection_timeout: 30
+    command_timeout: 300
+    
+  # ฐานข้อมูลสำรอง (หากต้องการ)
+  secondary:
+    type: "postgresql"
+    host: "localhost"
+    port: 5432
+    database: "dataops_backup"
+    username: "postgres"
+    password: "postgres"
+
+# ===== การตั้งค่าคุณภาพข้อมูล =====
+data_quality:
+  # เกณฑ์การกรองคอลัมน์ที่มี null values เยอะ
+  max_null_percentage: 30.0
+  
+  # จำนวน null values สูงสุดที่ยอมรับได้ในแต่ละแถว
+  acceptable_max_null: 26
+  
+  # คะแนนคุณภาพข้อมูลขั้นต่ำ
+  quality_threshold: 80.0
+  
+  # การตรวจสอบ business rules
+  validation_rules:
+    - name: "positive_loan_amount"
+      description: "Loan amount must be positive"
+      column: "loan_amnt"
+      condition: "> 0"
+      severity: "error"
+      
+    - name: "funded_not_exceed_loan"
+      description: "Funded amount should not exceed loan amount"
+      columns: ["funded_amnt", "loan_amnt"]
+      condition: "funded_amnt <= loan_amnt"
+      severity: "warning"
+      
+    - name: "interest_rate_range"
+      description: "Interest rate should be between 0 and 100%"
+      column: "int_rate"
+      condition: "BETWEEN 0 AND 1"
+      severity: "error"
+
+# ===== การตั้งค่าการประมวลผล =====
+processing:
+  # ขนาด batch สำหรับการประมวลผล
+  batch_size: 1000
+  
+  # จำนวน worker threads
+  max_workers: 4
+  
+  # เปิดใช้งานการประมวลผลแบบ parallel
+  enable_parallel: true
+  
+  # timeout สำหรับการประมวลผล (วินาที)
+  processing_timeout: 3600
+  
+  # จำนวนครั้งสูงสุดในการ retry หากเกิดข้อผิดพลาด
+  max_retries: 3
+  
+  # เวลารอระหว่าง retry (วินาที)
+  retry_delay: 5
+
+# ===== การตั้งค่าการ Logging =====
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # การบันทึก log ลงไฟล์
+  file:
+    enabled: true
+    path: "logs/dataops.log"
+    max_size: "10MB"
+    backup_count: 5
+    
+  # การส่ง log ไปยัง external systems
+  external:
+    elasticsearch:
+      enabled: false
+      host: "localhost"
+      port: 9200
+      index: "dataops-logs"
+
+# ===== การตั้งค่า Monitoring =====
+monitoring:
+  # เปิดใช้งาน metrics collection
+  enabled: true
+  
+  # Prometheus metrics
+  prometheus:
+    enabled: true
+    port: 8000
+    path: "/metrics"
+    
+  # การแจ้งเตือน
+  alerting:
+    enabled: true
+    email:
+      smtp_server: "smtp.gmail.com"
+      smtp_port: 587
+      username: "alerts@company.com"
+      password: "password"
+      recipients:
+        - "dataops-team@company.com"
+        - "admin@company.com"
+    
+    # เกณฑ์การแจ้งเตือน
+    thresholds:
+      error_rate: 0.05  # 5% error rate
+      processing_time: 3600  # 1 hour
+      quality_score: 80  # minimum quality score
+
+# ===== การตั้งค่า Cache =====
+cache:
+  redis:
+    enabled: false
+    host: "localhost"
+    port: 6379
+    database: 0
+    password: null
+    ttl: 3600  # seconds
+
+# ===== การตั้งค่า File Storage =====
+storage:
+  # Local file storage
+  local:
+    data_path: "data/"
+    temp_path: "temp/"
+    output_path: "output/"
+    
+  # Cloud storage (optional)
+  cloud:
+    aws_s3:
+      enabled: false
+      bucket: "dataops-bucket"
+      region: "us-east-1"
+      access_key: "ACCESS_KEY"
+      secret_key: "SECRET_KEY"
+      
+    azure_blob:
+      enabled: false
+      account_name: "storageaccount"
+      account_key: "ACCOUNT_KEY"
+      container: "dataops-container"
+
+# ===== การตั้งค่า ETL Pipeline =====
+etl:
+  # การตั้งค่าสำหรับ column type inference
+  column_inference:
+    datetime_patterns:
+      - "%Y-%m-%d %H:%M:%S"
+      - "%Y-%m-%d"
+      - "%m/%d/%Y"
+      - "%d-%m-%Y"
+    
+    # ตัวอย่างข้อมูลที่ใช้ในการอนุมาน (จำนวนแถว)
+    sample_size: 1000
+    
+  # การตั้งค่า dimensional modeling
+  dimensional_model:
+    # สร้าง surrogate keys อัตโนมัติ
+    auto_generate_keys: true
+    
+    # รูปแบบการตั้งชื่อ dimension tables
+    dimension_table_suffix: "_dim"
+    
+    # รูปแบบการตั้งชื่อ fact tables
+    fact_table_suffix: "_fact"
+
+# ===== การตั้งค่า Security =====
+security:
+  # การเข้ารหัสข้อมูลที่สำคัญ
+  encryption:
+    enabled: false
+    algorithm: "AES-256"
+    key_path: "config/encryption.key"
+    
+  # การตรวจสอบ data lineage
+  audit:
+    enabled: true
+    log_all_transformations: true
+    track_data_lineage: true
+
+# ===== การตั้งค่าสภาพแวดล้อม =====
+environment:
+  name: "development"  # development, testing, staging, production
+  debug: true
+  
+  # การตั้งค่าเฉพาะสภาพแวดล้อม
+  development:
+    database:
+      host: "localhost"
+      database: "dataops_dev"
+    logging:
+      level: "DEBUG"
+      
+  production:
+    database:
+      host: "prod-db-server"
+      database: "dataops_prod"
+    logging:
+      level: "INFO"
+    monitoring:
+      enabled: true
+    security:
+      encryption:
+        enabled: true
+
+# ===== Features Flags =====
+features:
+  # เปิดใช้งาน advanced data profiling
+  advanced_profiling: true
+  
+  # เปิดใช้งาน machine learning-based anomaly detection
+  ml_anomaly_detection: false
+  
+  # เปิดใช้งาน real-time processing
+  real_time_processing: false
+  
+  # เปิดใช้งาน data versioning
+  data_versioning: true
+  
+  # เปิดใช้งาน auto-scaling
+  auto_scaling: false

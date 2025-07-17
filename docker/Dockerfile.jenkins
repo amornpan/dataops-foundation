@@ -1,0 +1,62 @@
+# Jenkins with Python and DataOps Tools
+FROM jenkins/jenkins:lts
+
+# Switch to root user to install packages
+USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    gcc \
+    g++ \
+    unixodbc-dev \
+    curl \
+    gnupg \
+    git \
+    vim \
+    htop \
+    docker.io \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Microsoft ODBC Driver for SQL Server
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlink for python command
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# Install Docker Compose
+RUN curl -L "https://github.com/docker/compose/releases/download/2.21.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
+    && chmod +x /usr/local/bin/docker-compose
+
+# Add jenkins user to docker group
+RUN usermod -aG docker jenkins
+
+# Install additional Jenkins plugins
+COPY jenkins/plugins.txt /usr/share/jenkins/ref/plugins.txt
+RUN jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt
+
+# Copy Jenkins configuration
+COPY jenkins/jenkins.yaml /var/jenkins_home/casc_configs/jenkins.yaml
+
+# Switch back to jenkins user
+USER jenkins
+
+# Set environment variables
+ENV JAVA_OPTS="-Djenkins.install.runSetupWizard=false"
+ENV CASC_JENKINS_CONFIG="/var/jenkins_home/casc_configs/jenkins.yaml"
+ENV TZ=Asia/Bangkok
+
+# Expose Jenkins ports
+EXPOSE 8080 50000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/login || exit 1

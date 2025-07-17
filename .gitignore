@@ -1,0 +1,167 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# DataOps Foundation specific
+logs/
+temp/
+output/
+data/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration files with sensitive data
+config/config.local.yaml
+config/secrets.yaml
+.env
+.env.local
+.env.production
+
+# Database
+*.mdf
+*.ldf
+
+# Docker
+.docker/
+
+# Jenkins
+.jenkins/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Kubernetes
+*.kubeconfig
+
+# Testing
+.coverage
+.pytest_cache/
+test-results/
+junit.xml
+
+# Documentation
+docs/_build/
+site/
+
+# Monitoring
+prometheus/data/
+grafana/data/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Compressed files
+*.zip
+*.tar.gz
+*.rar
+
+# Security
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.json
+!examples/sample_data/*.csv
+!examples/sample_data/*.json
+
+# Binary files
+*.bin
+*.exe
+*.dll
+
+# Large files
+*.iso
+*.dmg
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
