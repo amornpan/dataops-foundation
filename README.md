@@ -2,7 +2,7 @@
 
 **โปรเจค DataOps Foundation** เป็น ETL Pipeline ที่มีประสิทธิภาพสูง สำหรับการประมวลผลข้อมูลสินเชื่อ (Loan Data) และโหลดเข้าสู่ SQL Server Data Warehouse พร้อมระบบ CI/CD โดยใช้ Jenkins
 
-> **พัฒนาจาก:** `ETL-dev (1).py` โดยปรับปรุงให้เหมาะสมกับ production environment
+> **พัฒนาจาก:** `ETL-dev.py` โดยปรับปรุงให้เหมาะสมกับ production environment
 
 ---
 
@@ -195,7 +195,7 @@ python-dotenv>=1.0.0,<1.1.0   # Environment variables
 #### 🔽 **1.1 Clone Repository**
 ```bash
 # Clone โปรเจคจาก GitHub
-git clone https://github.com/your-username/dataops-foundation.git
+git clone https://github.com/amornpan/dataops-foundation.git
 
 # เข้าไปยัง project directory
 cd dataops-foundation
@@ -256,13 +256,13 @@ ALTER ROLE db_ddladmin ADD MEMBER etl_user;
 # ตั้งค่า environment variables
 # Windows:
 set DB_PASSWORD=Passw0rd123456
-set DB_SERVER=35.185.131.47
+set DB_SERVER=x.x.x.x
 set DB_NAME=TestDB
 set DB_USERNAME=SA
 
 # Linux/Mac:
 export DB_PASSWORD=Passw0rd123456
-export DB_SERVER=35.185.131.47
+export DB_SERVER=x.x.x.x
 export DB_NAME=TestDB
 export DB_USERNAME=SA
 ```
@@ -296,7 +296,7 @@ logging:
 python -c "
 import pymssql
 conn = pymssql.connect(
-    server='35.185.131.47',
+    server='x.x.x.x',
     user='SA',
     password='Passw0rd123456',
     database='TestDB'
@@ -409,9 +409,9 @@ tail -f logs/etl_pipeline.log
 - **Steps to reproduce**: Detailed steps
 
 ### 📞 **ช่องทางการติดต่อ**
-- **GitHub Repository**: https://github.com/your-username/dataops-foundation
-- **Issue Tracker**: https://github.com/your-username/dataops-foundation/issues
-- **Email**: dataops-support@yourdomain.com
+- **GitHub Repository**: https://github.com/amornpan/dataops-foundation
+- **Issue Tracker**: https://github.com/amornpan/dataops-foundation/issues
+- **Email**: amornpan@gmail.com
 
 ---
 
@@ -433,9 +433,9 @@ tail -f logs/etl_pipeline.log
 - **[YAML](https://yaml.org/)** - Configuration Language
 
 ### 👥 **Contributors**
-- **Lead Developer**: Your Name
-- **Data Engineer**: Team Member
-- **DevOps Engineer**: Team Member
+- **Lead Developer**: Amornpan Phornchaicharoen
+- **Data Engineer**: Amornpan Phornchaicharoen
+- **DevOps Engineer**: Amornpan Phornchaicharoen
 
 ---
 
@@ -462,7 +462,7 @@ tail -f logs/etl_pipeline.log
 
 ```bash
 # 1. Clone และเข้าโฟลเดอร์
-git clone https://github.com/your-username/dataops-foundation.git
+git clone https://github.com/amornpan/dataops-foundation.git
 cd dataops-foundation
 
 # 2. ตั้งค่า environment
