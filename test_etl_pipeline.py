@@ -177,7 +177,10 @@ class TestDataOpsETLPipeline(unittest.TestCase):
         """Test data quality validation"""
         etl = DataOpsETLPipeline(self.config)
         
-        quality_report = etl.validate_data_quality(self.sample_data)
+        # Transform data first so int_rate is in decimal format
+        transformed_data = etl.transform_data(self.sample_data)
+        
+        quality_report = etl.validate_data_quality(transformed_data)
         
         # Check that report contains expected keys
         self.assertIn('total_rows', quality_report)
@@ -187,8 +190,8 @@ class TestDataOpsETLPipeline(unittest.TestCase):
         self.assertIn('timestamp', quality_report)
         
         # Check that values are reasonable
-        self.assertEqual(quality_report['total_rows'], len(self.sample_data))
-        self.assertEqual(quality_report['total_columns'], len(self.sample_data.columns))
+        self.assertEqual(quality_report['total_rows'], len(transformed_data))
+        self.assertEqual(quality_report['total_columns'], len(transformed_data.columns))
     
     @patch('etl_pipeline.create_engine')
     def test_load_to_database_success(self, mock_create_engine):
