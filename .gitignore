@@ -1,3 +1,5 @@
+# DataOps Foundation - Git Ignore Rules
+
 # Python
 __pycache__/
 *.py[cod]
@@ -16,57 +18,77 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.env/
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
+# VS Code
+.vscode/
+*.code-workspace
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# IPython
-profile_default/
-ipython_config.py
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
 
-# Virtual environments
-venv/
-env/
-ENV/
-env.bak/
-venv.bak/
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
-# OS
+# Logs
+*.log
+logs/
+*.log.*
+
+# Data files (add specific patterns as needed)
+*.csv
+*.xlsx
+*.xls
+*.json
+data/
+raw_data/
+processed_data/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -74,94 +96,135 @@ venv.bak/
 .Trashes
 ehthumbs.db
 Thumbs.db
+*~
 
-# DataOps Foundation specific
-logs/
-temp/
-output/
-data/
-*.log
-*.db
-*.sqlite
-*.sqlite3
+# Windows
+$RECYCLE.BIN/
+Desktop.ini
 
-# Configuration files with sensitive data
-config/config.local.yaml
-config/secrets.yaml
-.env
-.env.local
-.env.production
+# Linux
+*~
 
-# Database
-*.mdf
-*.ldf
-
-# Docker
-.docker/
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
 
 # Jenkins
 .jenkins/
+jenkins/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# Kubernetes
+*.kubeconfig
 
 # Terraform
 *.tfstate
 *.tfstate.*
 .terraform/
+*.tfvars
 
-# Kubernetes
-*.kubeconfig
-
-# Testing
-.coverage
-.pytest_cache/
-test-results/
-junit.xml
-
-# Documentation
-docs/_build/
-site/
-
-# Monitoring
-prometheus/data/
-grafana/data/
-
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.backup
-
-# Compressed files
-*.zip
-*.tar.gz
-*.rar
-
-# Security
+# Secrets and credentials
+secrets/
+credentials/
 *.pem
 *.key
 *.crt
 *.p12
-secrets/
+*.pfx
 
-# Data files
-*.csv
-*.xlsx
-*.xls
-*.parquet
-*.json
-!examples/sample_data/*.csv
-!examples/sample_data/*.json
+# IDE and editor files
+*.sublime-project
+*.sublime-workspace
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
 
-# Binary files
-*.bin
-*.exe
-*.dll
+# Documentation build
+docs/_build/
+site/
 
-# Large files
-*.iso
+# Package files
+*.7z
 *.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
 
-# Node.js (if any)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Configuration files with sensitive data
+config_local.yaml
+config_prod.yaml
+local_settings.py
+
+# Test reports
+test-reports/
+coverage-reports/
+*.xml
+
+# Profiling data
+.prof
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ETL specific
+etl_pipeline.log*
+audit_log.log*
+data_quality_report.html
+performance_report.html
+
+# Airflow (if used)
+airflow.cfg
+airflow.db
+logs/
+dags/__pycache__/
+plugins/__pycache__/
+
+# Great Expectations (if used)
+great_expectations/uncommitted/
+great_expectations/checkpoints/
+great_expectations/expectations/.ge_store_backend_id
+
+# Spark (if used)
+metastore_db/
+derby.log
+spark-warehouse/
+
+# Local development
+local/
+tmp/
+temp/
+scratch/
+
+# Machine Learning models
+*.pkl
+*.joblib
+*.model
+models/
+
+# Large datasets (configure as needed)
+# Uncomment if you want to ignore large data files
+# *.parquet
+# *.feather
+# *.h5
+# *.hdf5

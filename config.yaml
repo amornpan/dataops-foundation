@@ -1,0 +1,231 @@
+# DataOps Foundation Configuration
+# YAML configuration file for ETL pipeline settings
+
+# Database Configuration
+database:
+  server: "35.185.131.47"
+  database: "TestDB"
+  username: "SA"
+  password: "${DB_PASSWORD}"  # Use environment variable for security
+  port: 1433
+  driver: "pymssql"
+  connection_timeout: 30
+  command_timeout: 300
+
+# ETL Pipeline Configuration
+etl:
+  # Data Quality Settings
+  acceptable_max_null: 26
+  missing_threshold: 30.0
+  
+  # Batch Processing Settings
+  batch_size: 10000
+  max_retries: 3
+  retry_delay: 5  # seconds
+  
+  # File Processing Settings
+  input_file_encoding: "utf-8"
+  date_format: "%b-%Y"
+  percentage_columns: ["int_rate"]
+  
+  # Data Types Configuration
+  force_data_types:
+    loan_amnt: "float64"
+    funded_amnt: "float64"
+    installment: "float64"
+    term: "int32"
+  
+  # Dimension Table Configuration
+  dimensions:
+    home_ownership:
+      table_name: "home_ownership_dim"
+      key_column: "home_ownership_id"
+      value_column: "home_ownership"
+    
+    loan_status:
+      table_name: "loan_status_dim"
+      key_column: "loan_status_id"
+      value_column: "loan_status"
+    
+    date_dimension:
+      table_name: "issue_d_dim"
+      key_column: "issue_d_id"
+      date_column: "issue_d"
+      include_derived_fields: true
+  
+  # Fact Table Configuration
+  fact_table:
+    table_name: "loans_fact"
+    columns:
+      - "application_type"
+      - "loan_amnt"
+      - "funded_amnt"
+      - "term"
+      - "int_rate"
+      - "installment"
+      - "home_ownership_id"
+      - "loan_status_id"
+      - "issue_d_id"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "etl_pipeline.log"
+  max_file_size: "10MB"
+  backup_count: 5
+  
+  # Log specific events
+  log_database_operations: true
+  log_data_transformations: true
+  log_quality_checks: true
+
+# Data Validation Rules
+validation:
+  # Numeric validations
+  numeric_ranges:
+    loan_amnt:
+      min: 0
+      max: 1000000
+    int_rate:
+      min: 0.0
+      max: 1.0  # Assuming decimal format (not percentage)
+    installment:
+      min: 0
+      max: 50000
+  
+  # String validations
+  string_patterns:
+    application_type:
+      - "Individual"
+      - "Joint App"
+    home_ownership:
+      - "RENT"
+      - "OWN"
+      - "MORTGAGE"
+      - "OTHER"
+  
+  # Date validations
+  date_ranges:
+    issue_d:
+      min_date: "2000-01-01"
+      max_date: "2030-12-31"
+
+# Performance Optimization
+performance:
+  # Pandas optimization
+  use_categorical: true
+  optimize_memory: true
+  chunk_size: 50000
+  
+  # SQL optimization
+  use_bulk_insert: true
+  batch_insert_size: 1000
+  use_transactions: true
+  
+  # Parallel processing
+  enable_multiprocessing: false
+  max_workers: 4
+
+# Monitoring and Alerting
+monitoring:
+  # Data quality thresholds
+  quality_thresholds:
+    max_null_percentage: 30.0
+    max_duplicate_percentage: 5.0
+    min_record_count: 1000
+  
+  # Performance thresholds
+  performance_thresholds:
+    max_execution_time: 1800  # 30 minutes
+    max_memory_usage: "2GB"
+  
+  # Alert configurations
+  alerts:
+    enable_email_alerts: false
+    enable_slack_alerts: false
+    alert_on_failure: true
+    alert_on_quality_issues: true
+
+# Environment-specific configurations
+environments:
+  development:
+    database:
+      server: "localhost"
+      database: "TestDB_Dev"
+    etl:
+      batch_size: 1000
+    logging:
+      level: "DEBUG"
+  
+  staging:
+    database:
+      server: "staging-db-server"
+      database: "TestDB_Stage"
+    etl:
+      batch_size: 5000
+    logging:
+      level: "INFO"
+  
+  production:
+    database:
+      server: "35.185.131.47"
+      database: "TestDB"
+    etl:
+      batch_size: 10000
+    logging:
+      level: "WARNING"
+    monitoring:
+      alerts:
+        enable_email_alerts: true
+        alert_on_failure: true
+
+# Security Configuration
+security:
+  # Encryption settings
+  encrypt_sensitive_data: true
+  encryption_key_env_var: "ETL_ENCRYPTION_KEY"
+  
+  # Access control
+  require_authentication: true
+  allowed_ip_ranges:
+    - "0.0.0.0/0"  # Allow all IPs (configure as needed)
+  
+  # Audit logging
+  enable_audit_log: true
+  audit_log_file: "etl_audit.log"
+
+# Feature Flags
+features:
+  enable_data_profiling: true
+  enable_schema_validation: true
+  enable_incremental_loading: false
+  enable_data_lineage: false
+  enable_real_time_monitoring: false
+
+# Backup and Recovery
+backup:
+  enable_backup: false
+  backup_location: "/backup/dataops"
+  backup_retention_days: 30
+  backup_compression: true
+
+# Integration Settings
+integrations:
+  # Apache Airflow
+  airflow:
+    enabled: false
+    dag_id: "dataops_etl_pipeline"
+    schedule_interval: "@daily"
+  
+  # Apache Kafka
+  kafka:
+    enabled: false
+    bootstrap_servers: "localhost:9092"
+    topic: "dataops-events"
+  
+  # Elasticsearch
+  elasticsearch:
+    enabled: false
+    hosts: ["localhost:9200"]
+    index: "dataops-logs"
